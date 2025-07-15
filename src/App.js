@@ -103,7 +103,7 @@ function App() {
         <ExternalScripts />
         <nav className="bg-blue-700 p-4 shadow-lg">
           <div className="container mx-auto flex flex-col md:flex-row justify-between items-center">
-            <h1 className="text-white text-2xl font-bold mb-4 md:mb-0">Sistema de Água</h1>
+            <h1 className="text-white text-2xl font-bold mb-4 md:mb-0">Controle de Água ACAJUVI</h1>
             <div className="flex flex-wrap justify-center gap-2">
               {Object.keys(pageNames).map(pageKey => (
                 <button key={pageKey} onClick={() => navigateTo(pageKey)}

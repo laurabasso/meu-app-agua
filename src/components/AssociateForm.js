@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
-// CORREÇÃO: Adicionando onSnapshot que estava faltando para o useEffect.
-import { doc, setDoc, addDoc, collection, getDoc, onSnapshot } from 'firebase/firestore';
-// CORREÇÃO: Importando useAppContext do lugar certo.
+import { doc, setDoc, addDoc, collection, onSnapshot, runTransaction } from 'firebase/firestore';
 import { useAppContext } from '../AppContext';
 import Button from './Button';
 import LabeledInput from './LabeledInput';
 import Modal from './Modal';
 
 const AssociateForm = ({ associateToEdit, onSave, onCancel }) => {
-    // CORREÇÃO: Movendo todos os hooks para o topo.
+    // CORREÇÃO: Todos os hooks são chamados no topo, incondicionalmente.
     const context = useAppContext();
     const [associate, setAssociate] = useState(associateToEdit || { isActive: true, type: 'Associado' });
     const [regions, setRegions] = useState([]);
@@ -16,11 +14,11 @@ const AssociateForm = ({ associateToEdit, onSave, onCancel }) => {
     const [showModal, setShowModal] = useState(false);
     const [modalContent, setModalContent] = useState({ title: '', message: '' });
 
-    // CORREÇÃO: Guard clause depois dos hooks.
-    if (!context || !context.userId) return <div>Carregando...</div>;
-    const { db, getCollectionPath, userId } = context;
-
     useEffect(() => {
+        // A lógica DENTRO do hook pode ser condicional.
+        if (!context || !context.userId) return;
+
+        const { db, getCollectionPath, userId } = context;
         const settingsDocRef = doc(db, getCollectionPath('settings', userId), 'config');
         const unsubscribe = onSnapshot(settingsDocRef, (docSnap) => {
             if (docSnap.exists()) {
@@ -30,43 +28,64 @@ const AssociateForm = ({ associateToEdit, onSave, onCancel }) => {
             }
         });
         return unsubscribe;
-    }, [db, getCollectionPath, userId]);
+    }, [context]); // O efeito depende do objeto 'context' inteiro.
+
+    // CORREÇÃO: A verificação de segurança para a renderização da UI acontece DEPOIS de todos os hooks.
+    if (!context || !context.userId) {
+        return <div className="text-center p-10 font-semibold">Carregando...</div>;
+    }
+    
+    const { db, getCollectionPath, userId } = context;
 
     const handleChange = (field, value) => {
         setAssociate(prev => ({ ...prev, [field]: value }));
     };
 
     const handleSave = async () => {
-        if (!associate.name || !associate.sequentialId) {
-            setModalContent({ title: 'Erro', message: 'Nome e ID Sequencial são obrigatórios.' });
+        if (!associate.name) {
+            setModalContent({ title: 'Erro de Validação', message: 'O campo "Nome Completo" é obrigatório.' });
             setShowModal(true);
             return;
         }
+
         try {
-            if (associate.id) { // Edit
+            if (associate.id) { // Modo de Edição
                 const associateRef = doc(db, getCollectionPath('associates', userId), associate.id);
                 await setDoc(associateRef, associate, { merge: true });
-            } else { // Add
+                onSave();
+            } else { // Modo de Criação com ID Sequencial Automático
                 const settingsRef = doc(db, getCollectionPath('settings', userId), 'config');
-                const settingsSnap = await getDoc(settingsRef);
-                const nextId = (settingsSnap.data()?.nextSequentialId || 1);
                 
-                const newAssociate = { ...associate, sequentialId: nextId };
-                await addDoc(collection(db, getCollectionPath('associates', userId)), newAssociate);
-                await setDoc(settingsRef, { nextSequentialId: nextId + 1 }, { merge: true });
+                await runTransaction(db, async (transaction) => {
+                    const settingsSnap = await transaction.get(settingsRef);
+                    if (!settingsSnap.exists()) {
+                        throw new Error("Documento de configurações não encontrado!");
+                    }
+                    
+                    const nextId = settingsSnap.data().nextSequentialId || 1;
+                    
+                    const newAssociateData = { ...associate, sequentialId: nextId };
+                    const newAssociateRef = doc(collection(db, getCollectionPath('associates', userId)));
+                    
+                    transaction.set(newAssociateRef, newAssociateData);
+                    transaction.update(settingsRef, { nextSequentialId: nextId + 1 });
+                });
+                onSave();
             }
-            onSave();
         } catch (e) {
-            setModalContent({ title: 'Erro', message: `Falha ao salvar: ${e.message}` });
+            console.error("Erro ao salvar associado: ", e);
+            setModalContent({ title: 'Erro ao Salvar', message: `Não foi possível salvar o associado. Erro: ${e.message}` });
             setShowModal(true);
         }
     };
 
     return (
         <div className="p-4 md:p-8 bg-white rounded-xl shadow-lg max-w-2xl mx-auto my-8 font-inter">
-            <h2 className="text-3xl font-bold text-gray-800 mb-6">{associate.id ? 'Editar Associado' : 'Adicionar Associado'}</h2>
+            <h2 className="text-3xl font-bold text-gray-800 mb-6">{associate.id ? 'Editar Associado' : 'Adicionar Novo Associado'}</h2>
             <div className="space-y-4">
-                <LabeledInput label="ID Sequencial" type="number" value={associate.sequentialId || ''} onChange={e => handleChange('sequentialId', parseInt(e.target.value, 10))} />
+                {associate.id && (
+                    <LabeledInput label="ID Sequencial" type="number" value={associate.sequentialId || ''} onChange={e => handleChange('sequentialId', parseInt(e.target.value, 10))} />
+                )}
                 <LabeledInput label="Nome Completo" value={associate.name || ''} onChange={e => handleChange('name', e.target.value)} />
                 <LabeledInput label="Endereço" value={associate.address || ''} onChange={e => handleChange('address', e.target.value)} />
                 <LabeledInput label="Contato (Telefone)" value={associate.contact || ''} onChange={e => handleChange('contact', e.target.value)} />
@@ -95,6 +114,13 @@ const AssociateForm = ({ associateToEdit, onSave, onCancel }) => {
                     <input type="checkbox" id="isActive" checked={associate.isActive} onChange={e => handleChange('isActive', e.target.checked)} className="h-4 w-4 rounded" />
                     <label htmlFor="isActive" className="ml-2">Associado Ativo</label>
                 </div>
+                 <textarea
+                    placeholder="Observações..."
+                    value={associate.observations || ''}
+                    onChange={e => handleChange('observations', e.target.value)}
+                    rows="3"
+                    className="w-full p-2 border rounded-lg"
+                />
             </div>
             <div className="flex justify-end gap-4 mt-8">
                 <Button onClick={onCancel} variant="secondary">Cancelar</Button>
