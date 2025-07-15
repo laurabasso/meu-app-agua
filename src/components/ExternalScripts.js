@@ -14,7 +14,6 @@ const ExternalScripts = () => {
         };
 
         // Carrega as bibliotecas necessárias para funcionalidades como a geração de PDF.
-        loadScript('https://cdn.tailwindcss.com', 'tailwind-script');
         loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas-script');
         loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'jspdf-script');
     }, []);

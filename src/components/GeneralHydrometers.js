@@ -6,7 +6,7 @@ import Button from './Button';
 import LabeledInput from './LabeledInput';
 
 const GeneralHydrometers = () => {
-    // CORREÇÃO: Movendo todos os hooks para o topo.
+    // CORREÇÃO: Todos os hooks são chamados no topo, incondicionalmente.
     const context = useAppContext();
     const [generalReadings, setGeneralReadings] = useState([]);
     const [generalHydrometersList, setGeneralHydrometersList] = useState([]);
@@ -18,13 +18,12 @@ const GeneralHydrometers = () => {
     const [successMessage, setSuccessMessage] = useState('');
     const [editableReadings, setEditableReadings] = useState({});
 
-    // CORREÇÃO: Guard clause depois dos hooks.
-    if (!context || !context.userId) {
-        return <div className="text-center p-10">Carregando...</div>;
-    }
-    const { db, userId, getCollectionPath } = context;
-
     useEffect(() => {
+        // A lógica DENTRO do hook pode ser condicional.
+        if (!context || !context.userId) return;
+
+        const { db, userId, getCollectionPath } = context;
+
         const settingsDocRef = doc(db, getCollectionPath('settings', userId), 'config');
         const unsubSettings = onSnapshot(settingsDocRef, (docSnap) => {
             if (docSnap.exists() && docSnap.data().generalHydrometers) {
@@ -52,7 +51,13 @@ const GeneralHydrometers = () => {
             unsubReadings();
             unsubPeriods();
         };
-    }, [db, userId, getCollectionPath, selectedPeriodId]);
+    }, [context, selectedPeriodId]); // Depende do objeto de contexto para rodar quando estiver pronto.
+
+    // CORREÇÃO: A verificação de segurança para a renderização da UI acontece DEPOIS de todos os hooks.
+    if (!context || !context.userId) {
+        return <div className="text-center p-10 font-semibold">Carregando...</div>;
+    }
+    const { db, userId, getCollectionPath } = context;
 
     const getReadingsForPeriod = (hydrometerName, periodId) => {
         const period = periods.find(p => p.id === periodId);
@@ -84,7 +89,7 @@ const GeneralHydrometers = () => {
         const { currentReadingDoc, previousReading } = getReadingsForPeriod(hydrometerName, selectedPeriodId);
         const parsedValue = parseFloat(value);
 
-        if (parsedValue < previousReading) {
+        if (isNaN(parsedValue) || parsedValue < previousReading) {
             setModalContent({ title: 'Leitura Inválida', message: 'A leitura atual não pode ser menor que a anterior.' });
             setShowModal(true);
             return;
@@ -153,7 +158,7 @@ const GeneralHydrometers = () => {
                                         <LabeledInput
                                             type="number"
                                             step="0.01"
-                                            value={editableReadings[name] !== undefined ? editableReadings[name] : (currentReading || '')}
+                                            value={editableReadings[name] !== undefined ? editableReadings[name] : (currentReading !== null ? currentReading : '')}
                                             onChange={e => setEditableReadings(prev => ({ ...prev, [name]: e.target.value }))}
                                             onBlur={() => handleSaveReading(name)}
                                             className="w-28"
