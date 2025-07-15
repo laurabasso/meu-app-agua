@@ -1,7 +1,7 @@
-import React, { createContext, useContext } from 'react';
+import { createContext, useContext } from 'react';
 
-// O contexto do app será criado no App.js, mas exportamos o hook para uso nos componentes
-const AppContext = createContext(null);
+// CORREÇÃO: Exportando 'AppContext' e 'useAppContext' para que possam ser importados
+// corretamente em outros arquivos, em vez de usar 'export default'.
+export const AppContext = createContext(null);
+
 export const useAppContext = () => useContext(AppContext);
-
-export default AppContext;

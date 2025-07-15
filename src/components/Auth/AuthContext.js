@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail } from 'firebase/auth';
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 
-// Firebase config deve ser importado do arquivo de configuração
-import firebaseConfig from './firebaseConfig';
+// CORREÇÃO: O caminho para o firebaseConfig foi ajustado para sair de duas pastas.
+import firebaseConfig from '../../firebaseConfig';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -39,12 +39,15 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     await signOut(auth);
   };
-
+  
+  // Adicionando handleLogout ao contexto para ser acessível globalmente
   const value = {
     currentUser,
     login,
     logout,
-    error
+    handleLogout: logout, // Expondo a função de logout
+    error,
+    auth
   };
 
   return (
