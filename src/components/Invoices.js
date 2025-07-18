@@ -5,6 +5,10 @@ import Modal from './Modal';
 import Button from './Button';
 import LabeledInput from './LabeledInput';
 
+// MELHORIA: Importando as bibliotecas de PDF diretamente dos pacotes npm.
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+
 // Componente para o menu de pagamento
 const PaymentActions = ({ onPay }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -104,85 +108,20 @@ const Invoices = () => {
         });
     };
     
-    // MELHORIA: Layout do PDF totalmente refeito com as novas informações e estilo.
     const generateInvoiceHtml = (invoice, associate, period, settings) => {
         const acajuviInfo = settings?.acajuviInfo || {};
         const tariff = settings?.tariffs?.[associate.type] || {};
         const currentReadingDisplay = (invoice.previousReadingValue + invoice.consumption).toFixed(2);
         const consumptionPeriodName = period.consumptionPeriodName || 'N/A';
-
-        // Cálculos para o detalhamento da fatura
         const metrosPadrao = tariff.standardMeters || 0;
         const taxaFixa = tariff.fixedFee || 0;
         const tarifaExcedente = tariff.excessTariff || 0;
-        
         const excessoM3 = Math.max(0, invoice.consumption - metrosPadrao);
         const taxaExcessoValor = excessoM3 * tarifaExcedente;
-
-        return `
-            <div style="width: 210mm; height: 99mm; padding: 8mm; box-sizing: border-box; font-family: 'Helvetica', 'Arial', sans-serif; font-size: 11px; position: relative; border-bottom: 1px dashed #999; color: #333;">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px;">
-                    <div style="text-align: left;">
-                        <h3 style="font-size: 15px; font-weight: bold; margin: 0 0 5px 0;">${acajuviInfo.acajuviName || 'Associação de Água'}</h3>
-                        <p style="font-size: 10px; margin: 0;">CNPJ: ${acajuviInfo.acajuviCnpj || 'N/A'}</p>
-                    </div>
-                    <div style="text-align: right;">
-                        <h4 style="font-size: 13px; margin: 0; font-weight: bold;">FATURA DE ÁGUA</h4>
-                        <p style="font-size: 10px; margin: 0;">${period.billingPeriodName || 'N/A'}</p>
-                        <p style="font-size: 10px; margin: 0;">Vencimento: <strong>${formatDate(period.billingDueDate)}</strong></p>
-                    </div>
-                </div>
-
-                <div style="border-top: 1px solid #eee; border-bottom: 1px solid #eee; padding: 4px 0; margin-bottom: 5px; font-size: 10px; display: flex; justify-content: space-between;">
-                    <div>
-                        <strong>ASSOCIADO:</strong> ${associate.name} (ID: ${associate.sequentialId})<br>
-                        <strong>CPF/CNPJ:</strong> ${associate.documentNumber || 'N/A'}
-                    </div>
-                    <div style="text-align: right;">
-                        <strong>PERÍODO DE CONSUMO:</strong> ${consumptionPeriodName}<br>
-                        <strong>HIDRÔMETRO:</strong> ${associate.generalHydrometerId || 'N/A'}
-                    </div>
-                </div>
-                
-                <table style="width: 100%; border-collapse: collapse; margin-bottom: 5px; font-size: 10px;">
-                    <thead style="background-color: #f3f4f6;">
-                        <tr>
-                            <th style="padding: 4px; border: 1px solid #ddd; text-align: left;">Leitura Anterior</th>
-                            <th style="padding: 4px; border: 1px solid #ddd; text-align: left;">Leitura Atual</th>
-                            <th style="padding: 4px; border: 1px solid #ddd; text-align: left;">Consumo Total (m³)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td style="padding: 4px; border: 1px solid #ddd;">${invoice.previousReadingValue.toFixed(2)}</td>
-                            <td style="padding: 4px; border: 1px solid #ddd;">${currentReadingDisplay}</td>
-                            <td style="padding: 4px; border: 1px solid #ddd;">${invoice.consumption.toFixed(2)}</td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                    <table style="width: 65%; border-collapse: collapse; font-size: 10px;">
-                        <thead><tr><th style="padding: 4px; text-align: left;">Detalhamento</th><th style="padding: 4px; text-align: right;">Valor</th></tr></thead>
-                        <tbody>
-                            <tr><td>Taxa Padrão</td><td style="text-align: right;">R$ ${taxaFixa.toFixed(2)}</td></tr>
-                            <tr><td>Excesso (${excessoM3.toFixed(2)} m³ acima de ${metrosPadrao} m³)</td><td style="text-align: right;">R$ ${taxaExcessoValor.toFixed(2)}</td></tr>
-                            <tr><td>(Tarifa Excedente: R$ ${tarifaExcedente.toFixed(2)}/m³)</td><td></td></tr>
-                        </tbody>
-                    </table>
-                    <div style="text-align: right; border: 2px solid #333; padding: 5px;">
-                        <span style="font-size: 10px;">TOTAL A PAGAR</span><br>
-                        <span style="font-size: 16px; font-weight: bold;">R$ ${invoice.amountDue.toFixed(2)}</span>
-                    </div>
-                </div>
-
-                <div style="text-align: center; font-size: 10px; color: #333; position: absolute; bottom: 10mm; width: calc(100% - 16mm);">
-                    <strong>PIX:</strong> ${acajuviInfo.pixKey || 'N/A'} | <strong>Banco:</strong> ${acajuviInfo.bankName || 'N/A'} - Ag: ${acajuviInfo.bankAgency || 'N/A'} - Cc: ${acajuviInfo.bankAccountNumber || 'N/A'}
-                </div>
-            </div>
-        `;
+        return `<div style="width: 210mm; height: 99mm; padding: 8mm; box-sizing: border-box; font-family: 'Helvetica', 'Arial', sans-serif; font-size: 11px; position: relative; border-bottom: 1px dashed #999; color: #333;"><div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px;"><div style="text-align: left;"><h3 style="font-size: 15px; font-weight: bold; margin: 0 0 5px 0;">${acajuviInfo.acajuviName || 'Associação de Água'}</h3><p style="font-size: 10px; margin: 0;">CNPJ: ${acajuviInfo.acajuviCnpj || 'N/A'}</p></div><div style="text-align: right;"><h4 style="font-size: 13px; margin: 0; font-weight: bold;">FATURA DE ÁGUA</h4><p style="font-size: 10px; margin: 0;">${period.billingPeriodName || 'N/A'}</p><p style="font-size: 10px; margin: 0;">Vencimento: <strong>${formatDate(period.billingDueDate)}</strong></p></div></div><div style="border-top: 1px solid #eee; border-bottom: 1px solid #eee; padding: 4px 0; margin-bottom: 5px; font-size: 10px; display: flex; justify-content: space-between;"><div><strong>ASSOCIADO:</strong> ${associate.name} (ID ${associate.sequentialId})<br><strong>CPF/CNPJ:</strong> ${associate.documentNumber || 'N/A'}</div><div style="text-align: right;"><strong>PERÍODO DE CONSUMO:</strong> ${consumptionPeriodName}<br><strong>HIDRÔMETRO:</strong> ${associate.generalHydrometerId || 'N/A'}</div></div><table style="width: 100%; border-collapse: collapse; margin-bottom: 5px; font-size: 10px;"><thead style="background-color: #f3f4f6;"><tr><th style="padding: 4px; border: 1px solid #ddd; text-align: left;">Leitura Anterior</th><th style="padding: 4px; border: 1px solid #ddd; text-align: left;">Leitura Atual</th><th style="padding: 4px; border: 1px solid #ddd; text-align: left;">Consumo Total (m³)</th></tr></thead><tbody><tr><td style="padding: 4px; border: 1px solid #ddd;">${invoice.previousReadingValue.toFixed(2)}</td><td style="padding: 4px; border: 1px solid #ddd;">${currentReadingDisplay}</td><td style="padding: 4px; border: 1px solid #ddd;">${invoice.consumption.toFixed(2)}</td></tr></tbody></table><div style="display: flex; justify-content: space-between; align-items: flex-start;"><table style="width: 65%; border-collapse: collapse; font-size: 10px;"><thead><tr><th style="padding: 4px; text-align: left;">Detalhamento</th><th style="padding: 4px; text-align: center;">Valor</th></tr></thead><tbody><tr><td>Taxa Padrão................</td><td style="text-align: right;">R$ ${taxaFixa.toFixed(2)}</td></tr><tr><td>Excesso: ${excessoM3.toFixed(2)} m³................</td><td style="text-align: right;">R$ ${taxaExcessoValor.toFixed(2)}</td></tr><tr><td>Tarifa Excedente: R$ ${tarifaExcedente.toFixed(2)}/m³</td><td></td></tr></tbody></table><div style="text-align: right; border: 2px solid #333; padding: 5px;"><span style="font-size: 10px;">TOTAL A PAGAR</span><br><span style="font-size: 16px; font-weight: bold;">R$ ${invoice.amountDue.toFixed(2)}</span></div></div><div style="text-align: center; font-size: 10px; color: #333; position: absolute; bottom: 10mm; width: calc(100% - 16mm);"><strong>PIX:</strong> ${acajuviInfo.pixKey || 'N/A'} | <strong>Banco:</strong> ${acajuviInfo.bankName || 'N/A'} - Ag: ${acajuviInfo.bankAgency || 'N/A'} - Cc: ${acajuviInfo.bankAccountNumber || 'N/A'}</div></div>`;
     };
 
+    // CORREÇÃO: A função agora usa o 'jsPDF' e 'html2canvas' importados.
     const handleGeneratePdf = async () => {
         if (!pdfExportConfig.periodId || !settings) {
             setModalContent({ title: 'Erro', message: 'Selecione um período para exportar.' });
@@ -201,7 +140,6 @@ const Invoices = () => {
                 setModalContent({ title: 'Aviso', message: 'Nenhuma fatura encontrada para a seleção.' });
                 setShowModal(true); setPdfGenerating(false); return;
             }
-            const { jsPDF } = window.jspdf;
             const doc = new jsPDF('p', 'mm', 'a4');
             const tempDiv = document.createElement('div');
             tempDiv.style.position = 'absolute'; tempDiv.style.left = '-9999px'; tempDiv.style.width = '210mm';
@@ -215,7 +153,7 @@ const Invoices = () => {
                     for (let j = 0; j < 3 - chunk.length; j++) { pageHtml += `<div style="width: 210mm; height: 99mm; box-sizing: border-box;"></div>`; }
                 }
                 tempDiv.innerHTML = pageHtml;
-                const canvas = await window.html2canvas(tempDiv, { scale: 2.5 }); // Aumentei a escala para melhor qualidade
+                const canvas = await html2canvas(tempDiv, { scale: 2.5 });
                 if (i > 0) doc.addPage();
                 doc.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, 210, 297);
             }
@@ -256,6 +194,7 @@ const Invoices = () => {
                     })}</tbody>
                 </table>
             </div>
+            
             {pdfExportModalOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
                     <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md">
@@ -268,6 +207,7 @@ const Invoices = () => {
                     </div>
                 </div>
             )}
+
             <Modal {...modalContent} show={showModal} onConfirm={() => setShowModal(false)} />
         </div>
     );

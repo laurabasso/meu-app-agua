@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { useAppContext } from '../AppContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import Button from './Button';
+
+// MELHORIA: Importando as bibliotecas de PDF de forma explícita e mais robusta.
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const Reports = () => {
     const context = useAppContext();
@@ -31,12 +35,11 @@ const Reports = () => {
             })
         ];
         return () => unsubscribes.forEach(unsub => unsub());
-    }, [context]);
+    }, [context, selectedPeriodId]);
 
     const reportData = useMemo(() => {
         if (!selectedPeriodId || associates.length === 0) return { lossAnalysis: [], associatesReport: [], generalHydrometersReport: [] };
 
-        // Análise de Perdas
         const generalReadingsForPeriod = generalReadings.filter(r => r.periodId === selectedPeriodId);
         const invoicesForPeriod = invoices.filter(i => i.periodId === selectedPeriodId);
 
@@ -64,7 +67,6 @@ const Reports = () => {
             };
         });
 
-        // Relatório de Associados
         const associatesReport = invoicesForPeriod.map(invoice => {
             const associate = associates.find(a => a.id === invoice.associateId);
             return {
@@ -85,9 +87,8 @@ const Reports = () => {
     }
     const { formatDate } = context;
 
-    const exportToPdf = async (type) => {
-        const { jsPDF } = window.jspdf;
-        const { autoTable } = window.jspdf_autotable; // jspdf-autotable é carregado no index.html
+    // CORREÇÃO: A função agora usa a sintaxe autoTable(doc, ...) que é mais robusta.
+    const exportToPdf = (type) => {
         const doc = new jsPDF();
         const period = periods.find(p => p.id === selectedPeriodId);
 
@@ -106,7 +107,7 @@ const Reports = () => {
                 summary[item.hidrometro].valor += item.valor;
             });
             
-            doc.autoTable({
+            autoTable(doc, {
                 startY: 35,
                 head: [['ID', 'Nome', 'Hidrômetro', 'Consumo (m³)', 'Valor Fatura']],
                 body: tableData,
@@ -116,16 +117,16 @@ const Reports = () => {
             doc.setFontSize(14);
             doc.text('Resumo por Hidrômetro', 14, finalY);
             const summaryData = Object.entries(summary).map(([key, value]) => [key, `${value.consumo.toFixed(2)} m³`, `R$ ${value.valor.toFixed(2)}`]);
-            doc.autoTable({ startY: finalY + 2, head: [['Hidrômetro', 'Consumo Total', 'Valor Total']], body: summaryData });
+            autoTable(doc, { startY: finalY + 2, head: [['Hidrômetro', 'Consumo Total', 'Valor Total']], body: summaryData });
 
         } else if (type === 'generalHydrometers') {
             const tableData = reportData.generalHydrometersReport.map(item => [
                 item.generalHydrometerName, item.previousReading.toFixed(2), item.currentReading.toFixed(2), item.consumption.toFixed(2)
             ]);
             const totalConsumption = reportData.generalHydrometersReport.reduce((acc, item) => acc + item.consumption, 0);
-            tableData.push(['', '', 'TOTAL', totalConsumption.toFixed(2)]);
+            tableData.push(['', '', { content: 'TOTAL', styles: { fontStyle: 'bold' } }, { content: totalConsumption.toFixed(2), styles: { fontStyle: 'bold' } }]);
 
-            doc.autoTable({
+            autoTable(doc, {
                 startY: 35,
                 head: [['Nome', 'Leitura Anterior', 'Leitura Atual', 'Consumo (m³)']],
                 body: tableData,
@@ -134,6 +135,10 @@ const Reports = () => {
 
         doc.save(`relatorio_${type}_${period?.code.replace('/', '-')}.pdf`);
     };
+
+    if (loading) {
+        return <div className="text-center p-10 font-semibold">Carregando...</div>;
+    }
 
     return (
         <div className="p-4 md:p-8 bg-white rounded-xl shadow-lg max-w-7xl mx-auto my-8 font-inter space-y-12">
@@ -147,7 +152,6 @@ const Reports = () => {
                 </div>
             </div>
 
-            {/* Análise de Perdas */}
             <div className="p-6 border rounded-xl bg-gray-50">
                 <h3 className="text-xl font-semibold text-gray-700 mb-4">Análise de Perdas por Hidrômetro Geral</h3>
                 <p className="text-sm text-gray-600 mb-4">Compare o consumo total registrado no hidrômetro geral com a soma dos consumos individuais dos associados. Diferenças grandes podem indicar vazamentos.</p>
@@ -166,7 +170,6 @@ const Reports = () => {
                 </div>
             </div>
 
-            {/* Relatório de Faturamento */}
             <div className="p-6 border rounded-xl bg-gray-50">
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-xl font-semibold text-gray-700">Relatório Geral de Faturamento</h3>
@@ -180,7 +183,6 @@ const Reports = () => {
                 </div>
             </div>
 
-            {/* Relatório de Hidrômetros Gerais */}
             <div className="p-6 border rounded-xl bg-gray-50">
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-xl font-semibold text-gray-700">Relatório de Hidrômetros Gerais</h3>
@@ -193,7 +195,6 @@ const Reports = () => {
                     </table>
                 </div>
             </div>
-
         </div>
     );
 };
