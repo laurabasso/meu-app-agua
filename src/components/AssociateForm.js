@@ -6,7 +6,6 @@ import LabeledInput from './LabeledInput';
 import Modal from './Modal';
 
 const AssociateForm = ({ associateToEdit, onSave, onCancel }) => {
-    // CORREÇÃO: Todos os hooks são chamados no topo, incondicionalmente.
     const context = useAppContext();
     const [associate, setAssociate] = useState(associateToEdit || { isActive: true, type: 'Associado' });
     const [regions, setRegions] = useState([]);
@@ -15,7 +14,6 @@ const AssociateForm = ({ associateToEdit, onSave, onCancel }) => {
     const [modalContent, setModalContent] = useState({ title: '', message: '' });
 
     useEffect(() => {
-        // A lógica DENTRO do hook pode ser condicional.
         if (!context || !context.userId) return;
 
         const { db, getCollectionPath, userId } = context;
@@ -28,9 +26,8 @@ const AssociateForm = ({ associateToEdit, onSave, onCancel }) => {
             }
         });
         return unsubscribe;
-    }, [context]); // O efeito depende do objeto 'context' inteiro.
+    }, [context]);
 
-    // CORREÇÃO: A verificação de segurança para a renderização da UI acontece DEPOIS de todos os hooks.
     if (!context || !context.userId) {
         return <div className="text-center p-10 font-semibold">Carregando...</div>;
     }
@@ -53,7 +50,7 @@ const AssociateForm = ({ associateToEdit, onSave, onCancel }) => {
                 const associateRef = doc(db, getCollectionPath('associates', userId), associate.id);
                 await setDoc(associateRef, associate, { merge: true });
                 onSave();
-            } else { // Modo de Criação com ID Sequencial Automático
+            } else { // MELHORIA: Modo de Criação com ID Sequencial Automático e seguro (transação)
                 const settingsRef = doc(db, getCollectionPath('settings', userId), 'config');
                 
                 await runTransaction(db, async (transaction) => {
@@ -83,6 +80,7 @@ const AssociateForm = ({ associateToEdit, onSave, onCancel }) => {
         <div className="p-4 md:p-8 bg-white rounded-xl shadow-lg max-w-2xl mx-auto my-8 font-inter">
             <h2 className="text-3xl font-bold text-gray-800 mb-6">{associate.id ? 'Editar Associado' : 'Adicionar Novo Associado'}</h2>
             <div className="space-y-4">
+                {/* O ID sequencial agora é exibido, mas não editável no modo de criação */}
                 {associate.id && (
                     <LabeledInput label="ID Sequencial" type="number" value={associate.sequentialId || ''} onChange={e => handleChange('sequentialId', parseInt(e.target.value, 10))} />
                 )}
@@ -92,7 +90,8 @@ const AssociateForm = ({ associateToEdit, onSave, onCancel }) => {
                 <LabeledInput label="CPF/CNPJ" value={associate.documentNumber || ''} onChange={e => handleChange('documentNumber', e.target.value)} />
                 
                 <label className="block text-sm font-medium text-gray-700">Tipo</label>
-                <select value={associate.type || 'Associado'} onChange={e => handleChange('type', e.target.value)} className="w-full p-2 border rounded-lg">
+                <select value={associate.type || ''} onChange={e => handleChange('type', e.target.value)} className="w-full p-2 border rounded-lg">
+                    <option value="">Selecione o Tipo</option>
                     <option>Associado</option>
                     <option>Entidade</option>
                     <option>Outro</option>
