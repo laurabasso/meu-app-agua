@@ -41,8 +41,8 @@ const AssociateDetails = ({ associate, onBack }) => {
     const handleSaveObservations = async () => {
         const associateRef = doc(db, getCollectionPath('associates', userId), associate.id);
         await updateDoc(associateRef, { observations });
-        setModalContent({ title: 'Sucesso', message: 'Observações salvas!' });
-        setShowModal(true);
+        setModalContent({ title: 'Sucesso', message: 'Observações salvas!', onConfirm: () => setShowModal(false) });
+            setShowModal(true); return;
     };
 
     // MELHORIA: Funções para deletar registros do histórico

@@ -75,38 +75,18 @@ const Settings = () => {
         setSettings(prev => ({ ...prev, [section]: value.split('\n').map(item => item.trim()).filter(Boolean) }));
     };
 
-  const generatePeriodData = (readingDateInput) => {
-    const [year, month] = readingDateInput.split('-').map(Number);
-    
-    // --- Período de Faturamento ---
-    const firstMonthBilling = new Date(year, month - 1, 1);
-    const secondMonthBilling = new Date(year, month, 1); // JS lida com a virada de ano
-    const billingYear = secondMonthBilling.getFullYear(); // Ano correto para o faturamento
-
-    // --- Período de Consumo ---
-    const consumptionEndDate = new Date(year, month - 1, 0); // Último dia do mês anterior à leitura
-    const consumptionStartDate = new Date(consumptionEndDate.getFullYear(), consumptionEndDate.getMonth() - 1, 1); // Mês anterior a esse
-    // CORREÇÃO: Pega o ano da data final do consumo, que pode ser diferente da data inicial.
-    const consumptionYear = consumptionEndDate.getFullYear();
-
-    const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-    
-    const billingPeriodName = `Período de ${monthNames[firstMonthBilling.getMonth()]} a ${monthNames[secondMonthBilling.getMonth()]} de ${billingYear}`;
-    const consumptionPeriodName = `Leitura de ${monthNames[consumptionStartDate.getMonth()]} a ${monthNames[consumptionEndDate.getMonth()]} de ${consumptionYear}`;
-    
-    const code = `${String(month).padStart(2, '0')}/${year}`;
-    const billingDueDate = new Date(year, month - 1, 15);
-    
-    return { 
-        code, 
-        billingPeriodName, 
-        billingDueDate: billingDueDate.toISOString().split('T')[0], 
-        readingDate: firstMonthBilling.toISOString().split('T')[0], 
-        consumptionPeriodName, 
-        consumptionStartDate: consumptionStartDate.toISOString().split('T')[0], 
-        consumptionEndDate: consumptionEndDate.toISOString().split('T')[0] 
+    const generatePeriodData = (readingDateInput) => {
+        const [year, month] = readingDateInput.split('-').map(Number);
+        const readingDate = new Date(year, month - 1, 1);
+        const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+        const billingPeriodName = `Período de ${monthNames[month - 1]} a ${monthNames[month % 12]} de ${year}`;
+        const code = `${String(month).padStart(2, '0')}/${year}`;
+        const billingDueDate = new Date(year, month - 1, 15);
+        const consumptionEndDate = new Date(year, month - 1, 0);
+        const consumptionStartDate = new Date(consumptionEndDate.getFullYear(), consumptionEndDate.getMonth() - 1, 1);
+        const consumptionPeriodName = `Leitura de ${monthNames[consumptionStartDate.getMonth()]} a ${monthNames[consumptionEndDate.getMonth()]} de ${consumptionStartDate.getFullYear()}`;
+        return { code, billingPeriodName, billingDueDate: billingDueDate.toISOString().split('T')[0], readingDate: readingDate.toISOString().split('T')[0], consumptionPeriodName, consumptionStartDate: consumptionStartDate.toISOString().split('T')[0], consumptionEndDate: consumptionEndDate.toISOString().split('T')[0] };
     };
-  };
 
     const handleAddPeriod = async () => {
         if (!newPeriodStartDate) return;
@@ -233,7 +213,7 @@ const Settings = () => {
         const templates = { 
             associates: ['sequentialId', 'name', 'address', 'contact', 'documentNumber', 'type', 'region', 'generalHydrometerId', 'isActive', 'observations'], 
             readings: ['sequentialId', 'periodId', 'currentReading', 'date'],
-            periods: ['readingDate'] // MELHORIA: Template para períodos
+            periods: ['readingDate']
         };
         const headers = templates[collectionName];
         if (!headers) return;
@@ -293,13 +273,11 @@ const Settings = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-3"><h4 className="font-semibold text-gray-600">Exportar para CSV</h4>
                             <Button onClick={() => exportToCsv('associates', 'associados_export')} variant="secondary" className="w-full">Exportar Associados</Button>
-                            {/* MELHORIA: Botão para exportar leituras adicionado */}
                             <Button onClick={() => exportToCsv('readings', 'leituras_export')} variant="secondary" className="w-full">Exportar Leituras</Button>
                         </div>
                         <div className="space-y-3"><h4 className="font-semibold text-gray-600">Importar / Atualizar Dados</h4>
                             <div className="p-4 border rounded-lg bg-white"><label className="block text-sm font-medium text-gray-700 mb-2">Associados</label><p className="text-xs text-gray-600 mb-2">Use o ID Sequencial para atualizar ou criar associados.</p><Button onClick={() => downloadCsvTemplate('associates')} size="xs" variant="info" className="mb-2">Baixar Modelo</Button><input type="file" accept=".csv" onChange={e => importFromCsv('associates', e)} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/></div>
                             <div className="p-4 border rounded-lg bg-white"><label className="block text-sm font-medium text-gray-700 mb-2">Leituras</label><p className="text-xs text-gray-600 mb-2">Adiciona novos registros de leitura.</p><Button onClick={() => downloadCsvTemplate('readings')} size="xs" variant="info" className="mb-2">Baixar Modelo</Button><input type="file" accept=".csv" onChange={e => importFromCsv('readings', e)} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/></div>
-                            {/* MELHORIA: Seção para importar períodos */}
                             <div className="p-4 border rounded-lg bg-white"><label className="block text-sm font-medium text-gray-700 mb-2">Períodos</label><p className="text-xs text-gray-600 mb-2">Adiciona novos períodos históricos.</p><Button onClick={() => downloadCsvTemplate('periods')} size="xs" variant="info" className="mb-2">Baixar Modelo</Button><input type="file" accept=".csv" onChange={e => importFromCsv('periods', e)} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/></div>
                         </div>
                     </div>

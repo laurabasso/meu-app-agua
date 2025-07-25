@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, doc, onSnapshot, updateDoc, query, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, updateDoc, query, where, writeBatch, deleteDoc } from 'firebase/firestore';
 import { useAppContext } from '../AppContext';
 import Modal from './Modal';
 import Button from './Button';
 import LabeledInput from './LabeledInput';
-
-// MELHORIA: Importando as bibliotecas de PDF diretamente dos pacotes npm.
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
@@ -46,6 +44,8 @@ const Invoices = () => {
     const [pdfExportModalOpen, setPdfExportModalOpen] = useState(false);
     const [pdfExportConfig, setPdfExportConfig] = useState({ periodId: '', region: 'all' });
     const [pdfGenerating, setPdfGenerating] = useState(false);
+    // MELHORIA: Estado para controlar as faturas selecionadas
+    const [selectedInvoices, setSelectedInvoices] = useState(new Set());
 
     useEffect(() => {
         if (!context || !context.userId) return;
@@ -118,10 +118,9 @@ const Invoices = () => {
         const tarifaExcedente = tariff.excessTariff || 0;
         const excessoM3 = Math.max(0, invoice.consumption - metrosPadrao);
         const taxaExcessoValor = excessoM3 * tarifaExcedente;
-        return `<div style="width: 210mm; height: 99mm; padding: 8mm; box-sizing: border-box; font-family: 'Helvetica', 'Arial', sans-serif; font-size: 11px; position: relative; border-bottom: 1px dashed #999; color: #333;"><div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px;"><div style="text-align: left;"><h3 style="font-size: 15px; font-weight: bold; margin: 0 0 5px 0;">${acajuviInfo.acajuviName || 'Associação de Água'}</h3><p style="font-size: 10px; margin: 0;">CNPJ: ${acajuviInfo.acajuviCnpj || 'N/A'}</p></div><div style="text-align: right;"><h4 style="font-size: 13px; margin: 0; font-weight: bold;">FATURA DE ÁGUA</h4><p style="font-size: 10px; margin: 0;">${period.billingPeriodName || 'N/A'}</p><p style="font-size: 10px; margin: 0;">Vencimento: <strong>${formatDate(period.billingDueDate)}</strong></p></div></div><div style="border-top: 1px solid #eee; border-bottom: 1px solid #eee; padding: 4px 0; margin-bottom: 5px; font-size: 10px; display: flex; justify-content: space-between;"><div><strong>ASSOCIADO:</strong> ${associate.name} (ID ${associate.sequentialId})<br><strong>CPF/CNPJ:</strong> ${associate.documentNumber || 'N/A'}</div><div style="text-align: right;"><strong>PERÍODO DE CONSUMO:</strong> ${consumptionPeriodName}<br><strong>HIDRÔMETRO:</strong> ${associate.generalHydrometerId || 'N/A'}</div></div><table style="width: 100%; border-collapse: collapse; margin-bottom: 5px; font-size: 10px;"><thead style="background-color: #f3f4f6;"><tr><th style="padding: 4px; border: 1px solid #ddd; text-align: left;">Leitura Anterior</th><th style="padding: 4px; border: 1px solid #ddd; text-align: left;">Leitura Atual</th><th style="padding: 4px; border: 1px solid #ddd; text-align: left;">Consumo Total (m³)</th></tr></thead><tbody><tr><td style="padding: 4px; border: 1px solid #ddd;">${invoice.previousReadingValue.toFixed(2)}</td><td style="padding: 4px; border: 1px solid #ddd;">${currentReadingDisplay}</td><td style="padding: 4px; border: 1px solid #ddd;">${invoice.consumption.toFixed(2)}</td></tr></tbody></table><div style="display: flex; justify-content: space-between; align-items: flex-start;"><table style="width: 65%; border-collapse: collapse; font-size: 10px;"><thead><tr><th style="padding: 4px; text-align: left;">Detalhamento</th><th style="padding: 4px; text-align: center;">Valor</th></tr></thead><tbody><tr><td>Taxa Padrão................</td><td style="text-align: right;">R$ ${taxaFixa.toFixed(2)}</td></tr><tr><td>Excesso: ${excessoM3.toFixed(2)} m³................</td><td style="text-align: right;">R$ ${taxaExcessoValor.toFixed(2)}</td></tr><tr><td>Tarifa Excedente: R$ ${tarifaExcedente.toFixed(2)}/m³</td><td></td></tr></tbody></table><div style="text-align: right; border: 2px solid #333; padding: 5px;"><span style="font-size: 10px;">TOTAL A PAGAR</span><br><span style="font-size: 16px; font-weight: bold;">R$ ${invoice.amountDue.toFixed(2)}</span></div></div><div style="text-align: center; font-size: 10px; color: #333; position: absolute; bottom: 10mm; width: calc(100% - 16mm);"><strong>PIX:</strong> ${acajuviInfo.pixKey || 'N/A'} | <strong>Banco:</strong> ${acajuviInfo.bankName || 'N/A'} - Ag: ${acajuviInfo.bankAgency || 'N/A'} - Cc: ${acajuviInfo.bankAccountNumber || 'N/A'}</div></div>`;
+        return `<div style="width: 210mm; height: 99mm; padding: 8mm; box-sizing: border-box; font-family: 'Helvetica', 'Arial', sans-serif; font-size: 11px; position: relative; border-bottom: 1px dashed #999; color: #333;"><div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px;"><div style="text-align: left;"><h3 style="font-size: 15px; font-weight: bold; margin: 0 0 5px 0;">${acajuviInfo.acajuviName || 'Associação de Água'}</h3><p style="font-size: 10px; margin: 0;">CNPJ: ${acajuviInfo.acajuviCnpj || 'N/A'}</p></div><div style="text-align: right;"><h4 style="font-size: 13px; margin: 0; font-weight: bold;">FATURA DE ÁGUA</h4><p style="font-size: 10px; margin: 0;">${period.billingPeriodName || 'N/A'}</p><p style="font-size: 10px; margin: 0;">Vencimento: <strong>${formatDate(period.billingDueDate)}</strong></p></div></div><div style="border-top: 1px solid #eee; border-bottom: 1px solid #eee; padding: 4px 0; margin-bottom: 5px; font-size: 10px; display: flex; justify-content: space-between;"><div><strong>ASSOCIADO:</strong> ${associate.name} (ID: ${associate.sequentialId})<br><strong>CPF/CNPJ:</strong> ${associate.documentNumber || 'N/A'}</div><div style="text-align: right;"><strong>PERÍODO DE CONSUMO:</strong> ${consumptionPeriodName}<br><strong>HIDRÔMETRO:</strong> ${associate.generalHydrometerId || 'N/A'}</div></div><table style="width: 100%; border-collapse: collapse; margin-bottom: 5px; font-size: 10px;"><thead style="background-color: #f3f4f6;"><tr><th style="padding: 4px; border: 1px solid #ddd; text-align: left;">Leitura Anterior</th><th style="padding: 4px; border: 1px solid #ddd; text-align: left;">Leitura Atual</th><th style="padding: 4px; border: 1px solid #ddd; text-align: left;">Consumo Total (m³)</th></tr></thead><tbody><tr><td style="padding: 4px; border: 1px solid #ddd;">${invoice.previousReadingValue.toFixed(2)}</td><td style="padding: 4px; border: 1px solid #ddd;">${currentReadingDisplay}</td><td style="padding: 4px; border: 1px solid #ddd;">${invoice.consumption.toFixed(2)}</td></tr></tbody></table><div style="display: flex; justify-content: space-between; align-items: flex-start;"><table style="width: 65%; border-collapse: collapse; font-size: 10px;"><thead><tr><th style="padding: 4px; text-align: left;">Detalhamento</th><th style="padding: 4px; text-align: right;">Valor</th></tr></thead><tbody><tr><td>Taxa Padrão</td><td style="text-align: right;">R$ ${taxaFixa.toFixed(2)}</td></tr><tr><td>Excesso (${excessoM3.toFixed(2)} m³ acima de ${metrosPadrao} m³)</td><td style="text-align: right;">R$ ${taxaExcessoValor.toFixed(2)}</td></tr><tr><td>(Tarifa Excedente: R$ ${tarifaExcedente.toFixed(2)}/m³)</td><td></td></tr></tbody></table><div style="text-align: right; border: 2px solid #333; padding: 5px;"><span style="font-size: 10px;">TOTAL A PAGAR</span><br><span style="font-size: 16px; font-weight: bold;">R$ ${invoice.amountDue.toFixed(2)}</span></div></div><div style="text-align: center; font-size: 10px; color: #333; position: absolute; bottom: 10mm; width: calc(100% - 16mm);"><strong>PIX:</strong> ${acajuviInfo.pixKey || 'N/A'} | <strong>Banco:</strong> ${acajuviInfo.bankName || 'N/A'} - Ag: ${acajuviInfo.bankAgency || 'N/A'} - Cc: ${acajuviInfo.bankAccountNumber || 'N/A'}</div></div>`;
     };
 
-    // CORREÇÃO: A função agora usa o 'jsPDF' e 'html2canvas' importados.
     const handleGeneratePdf = async () => {
         if (!pdfExportConfig.periodId || !settings) {
             setModalContent({ title: 'Erro', message: 'Selecione um período para exportar.' });
@@ -169,6 +168,43 @@ const Invoices = () => {
         }
     };
 
+    const handleToggleSelect = (invoiceId) => {
+        setSelectedInvoices(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(invoiceId)) newSet.delete(invoiceId);
+            else newSet.add(invoiceId);
+            return newSet;
+        });
+    };
+
+    const handleToggleSelectAll = () => {
+        if (selectedInvoices.size === filteredInvoices.length) {
+            setSelectedInvoices(new Set());
+        } else {
+            setSelectedInvoices(new Set(filteredInvoices.map(inv => inv.id)));
+        }
+    };
+
+    const handleBulkDelete = () => {
+        if (selectedInvoices.size === 0) return;
+        setModalContent({
+            title: 'Confirmar Exclusão em Massa',
+            message: `Você confirma a exclusão de ${selectedInvoices.size} faturas? Esta ação não pode ser desfeita.`,
+            type: 'confirm',
+            onConfirm: async () => {
+                const batch = writeBatch(db);
+                selectedInvoices.forEach(id => {
+                    batch.delete(doc(db, getCollectionPath('invoices', userId), id));
+                });
+                await batch.commit();
+                setSelectedInvoices(new Set());
+                setShowModal(false);
+            },
+            onCancel: () => setShowModal(false)
+        });
+        setShowModal(true);
+    };
+
     return (
         <div className="p-4 md:p-8 bg-white rounded-xl shadow-lg max-w-7xl mx-auto my-8 font-inter">
             <div className="flex justify-between items-center mb-6">
@@ -181,20 +217,29 @@ const Invoices = () => {
                 <div className="p-4 bg-teal-50 rounded-lg"><div className="text-sm text-teal-800">Pago (PIX)</div><div className="text-2xl font-bold text-teal-900">R$ {financialSummary.totalPix.toFixed(2)}</div></div>
                 <div className="p-4 bg-red-50 rounded-lg"><div className="text-sm text-red-800">Pendente</div><div className="text-2xl font-bold text-red-900">R$ {financialSummary.totalPendente.toFixed(2)}</div></div>
             </div>
-            <div className="flex flex-col md:flex-row gap-4 mb-6 p-4 border rounded-lg bg-gray-50">
+            <div className="flex flex-col md:flex-row gap-4 mb-4 p-4 border rounded-lg bg-gray-50">
                 <LabeledInput type="text" placeholder="Buscar por nome ou ID do associado..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="flex-grow"/>
                 <div className="flex-shrink-0"><label className="block text-sm font-medium text-gray-700">Período</label><select value={filter.periodId} onChange={e => setFilter(f => ({...f, periodId: e.target.value}))} className="w-full p-2 border rounded-lg"><option value="all">Todos</option>{periods.map(p => <option key={p.id} value={p.id}>{p.billingPeriodName}</option>)}</select></div>
                 <div className="flex-shrink-0"><label className="block text-sm font-medium text-gray-700">Status</label><select value={filter.status} onChange={e => setFilter(f => ({...f, status: e.target.value}))} className="w-full p-2 border rounded-lg"><option value="all">Todos</option><option value="Pago">Pago</option><option value="Pendente">Pendente</option></select></div>
             </div>
+            {/* MELHORIA: Barra de Ações em Massa */}
+            <div className="flex items-center gap-4 mb-4 p-2 bg-gray-50 rounded-lg">
+                <Button onClick={handleBulkDelete} variant="danger" disabled={selectedInvoices.size === 0}>
+                    Excluir {selectedInvoices.size} faturas selecionadas
+                </Button>
+            </div>
             <div className="overflow-x-auto rounded-xl shadow-md">
-                <table className="min-w-full bg-white"><thead className="bg-gray-100"><tr><th className="py-3 px-4 text-left">ID</th><th className="py-3 px-4 text-left">Associado</th><th className="py-3 px-4 text-left">Período</th><th className="py-3 px-4 text-left">Valor (R$)</th><th className="py-3 px-4 text-left">Status</th><th className="py-3 px-4 text-left">Forma de Pag.</th><th className="py-3 px-4 text-left">Ações</th></tr></thead>
+                <table className="min-w-full bg-white"><thead className="bg-gray-100"><tr>
+                    <th className="py-3 px-4"><input type="checkbox" onChange={handleToggleSelectAll} checked={selectedInvoices.size === filteredInvoices.length && filteredInvoices.length > 0} /></th>
+                    <th className="py-3 px-4 text-left">ID</th><th className="py-3 px-4 text-left">Associado</th><th className="py-3 px-4 text-left">Período</th><th className="py-3 px-4 text-left">Valor (R$)</th><th className="py-3 px-4 text-left">Status</th><th className="py-3 px-4 text-left">Forma de Pag.</th><th className="py-3 px-4 text-left">Ações</th></tr></thead>
                     <tbody>{filteredInvoices.sort((a,b) => new Date(b.invoiceDate) - new Date(a.invoiceDate)).map(invoice => {
                         const associate = getAssociateInfo(invoice.associateId);
-                        return (<tr key={invoice.id} className="border-b hover:bg-gray-50"><td className="py-3 px-4">{associate.sequentialId}</td><td className="py-3 px-4">{associate.name}</td><td className="py-3 px-4">{invoice.period}</td><td className="py-3 px-4">R$ {invoice.amountDue.toFixed(2)}</td><td className={`py-3 px-4 font-semibold ${invoice.status === 'Pendente' ? 'text-red-500' : 'text-green-600'}`}>{invoice.status}</td><td className="py-3 px-4">{invoice.paymentMethod || 'N/A'}</td><td className="py-3 px-4">{invoice.status === 'Pendente' && (<PaymentActions onPay={(method) => handleMarkAsPaid(invoice.id, method)} />)}</td></tr>);
+                        return (<tr key={invoice.id} className={`border-b transition-colors ${selectedInvoices.has(invoice.id) ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
+                            <td className="py-3 px-4"><input type="checkbox" checked={selectedInvoices.has(invoice.id)} onChange={() => handleToggleSelect(invoice.id)} /></td>
+                            <td className="py-3 px-4">{associate.sequentialId}</td><td className="py-3 px-4">{associate.name}</td><td className="py-3 px-4">{invoice.period}</td><td className="py-3 px-4">R$ {invoice.amountDue.toFixed(2)}</td><td className={`py-3 px-4 font-semibold ${invoice.status === 'Pendente' ? 'text-red-500' : 'text-green-600'}`}>{invoice.status}</td><td className="py-3 px-4">{invoice.paymentMethod || 'N/A'}</td><td className="py-3 px-4">{invoice.status === 'Pendente' && (<PaymentActions onPay={(method) => handleMarkAsPaid(invoice.id, method)} />)}</td></tr>);
                     })}</tbody>
                 </table>
             </div>
-            
             {pdfExportModalOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
                     <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md">
@@ -207,8 +252,7 @@ const Invoices = () => {
                     </div>
                 </div>
             )}
-
-            <Modal {...modalContent} show={showModal} onConfirm={() => setShowModal(false)} />
+            <Modal {...modalContent} show={showModal} onConfirm={modalContent.onConfirm || (() => setShowModal(false))} onCancel={modalContent.onCancel} />
         </div>
     );
 };
