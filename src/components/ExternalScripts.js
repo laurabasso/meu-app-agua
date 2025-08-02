@@ -12,10 +12,9 @@ const ExternalScripts = () => {
             }
         };
 
-        // CORREÇÃO: Apenas o html2canvas é necessário aqui, pois o jsPDF e o jspdf-autotable
-        // já estão sendo importados diretamente nos componentes que os utilizam.
-        loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas-script');
-
+        // Carrega o JSZip para a funcionalidade de baixar arquivos .zip
+        loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', 'jszip-script');
+        
     }, []);
 
     return null;
