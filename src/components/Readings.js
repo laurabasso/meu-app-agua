@@ -88,8 +88,7 @@ const Readings = ({ onViewAssociateDetails }) => {
         }
         setSortConfig({ key, direction });
     };
-    
-    // CORREÇÃO: Lógica de cálculo da fatura atualizada para cobrar taxa fixa mesmo com consumo zero.
+
     const calculateAmountDue = (consumption, associate) => {
         if (!settings || !settings.tariffs || !associate) return 0;
         const tariff = settings.tariffs[associate.type] || settings.tariffs['Associado'];
@@ -97,16 +96,13 @@ const Readings = ({ onViewAssociateDetails }) => {
 
         const { standardMeters = 0, fixedFee = 0, excessTariff = 0 } = tariff;
 
-        // A taxa fixa é a base de tudo para associados e entidades.
         let amount = fixedFee;
 
-        // Calcula o valor excedente apenas se o consumo for maior que os metros padrão.
         if (consumption > standardMeters) {
             const excessConsumption = consumption - standardMeters;
             amount += excessConsumption * excessTariff;
         }
         
-        // Para o tipo 'Outro', se não houver consumo, não há cobrança.
         if (associate.type === 'Outro' && consumption === 0) {
             return 0;
         }
@@ -162,20 +158,40 @@ const Readings = ({ onViewAssociateDetails }) => {
     const handleSaveReading = async (associateId) => {
         const value = editableReadings[associateId];
         if (value === undefined || value === '' || !selectedPeriodId) return;
+
+        // **NOVA LÓGICA:** Busca o objeto do período selecionado para obter a data de leitura.
+        const selectedPeriod = periods.find(p => p.id === selectedPeriodId);
+        if (!selectedPeriod) {
+            setModalContent({ title: 'Erro', message: 'Período selecionado não encontrado.' });
+            setShowModal(true);
+            return;
+        }
+
         const { currentReadingDoc, previousReading } = getReadingsForAssociate(associateId, selectedPeriodId);
         const parsedValue = parseFloat(value);
         
-        // CORREÇÃO: A validação de "menor que anterior" não se aplica se for um período de reset.
         if (isNaN(parsedValue) || (parsedValue < previousReading && !currentReadingDoc?.isReset)) {
             setModalContent({ title: 'Leitura Inválida', message: 'A leitura atual não pode ser menor que a anterior.', onConfirm: () => setShowModal(false) });
             setShowModal(true); return;
         }
 
         const consumption = currentReadingDoc?.isReset ? parsedValue : parsedValue - previousReading;
-        const readingData = { associateId, periodId: selectedPeriodId, date: new Date().toISOString().split('T')[0], currentReading: parsedValue, previousReading, consumption };
+        
+        // **ALTERAÇÃO PRINCIPAL:** O campo 'date' agora usa a 'readingDate' do período selecionado.
+        const readingData = { 
+            associateId, 
+            periodId: selectedPeriodId, 
+            date: selectedPeriod.readingDate, // A data da leitura é a data de início do período.
+            currentReading: parsedValue, 
+            previousReading, 
+            consumption 
+        };
         
         const batch = writeBatch(db);
         let savedReadingId;
+        
+        // A lógica para criar ou atualizar a leitura já existe e está correta.
+        // Ela impede a criação de uma nova leitura se já houver uma para o associado no período.
         if (currentReadingDoc) {
             const readingRef = doc(db, getCollectionPath('readings', userId), currentReadingDoc.id);
             batch.update(readingRef, readingData);
@@ -185,6 +201,7 @@ const Readings = ({ onViewAssociateDetails }) => {
             batch.set(newReadingRef, readingData);
             savedReadingId = newReadingRef.id;
         }
+        
         await createOrUpdateInvoice(batch, { ...readingData, id: savedReadingId });
         await batch.commit();
         

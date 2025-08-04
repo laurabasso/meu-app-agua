@@ -75,32 +75,26 @@ const Settings = () => {
         setSettings(prev => ({ ...prev, [section]: value.split('\n').map(item => item.trim()).filter(Boolean) }));
     };
 
-    // CORREÇÃO: Lógica de geração de período totalmente refeita para seguir a sua nova regra.
     const generatePeriodData = (readingDateInput) => {
         const [year, monthNum] = readingDateInput.split('-').map(Number);
-        const monthIndex = monthNum - 1; // Mês 0-indexado para o objeto Date
+        const monthIndex = monthNum - 1;
 
         const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
-        // A data da leitura é a base
         const readingDate = new Date(year, monthIndex, 1);
 
-        // --- Período de Consumo (dois meses ANTERIORES à data da leitura) ---
-        const consumptionEndDate = new Date(year, monthIndex, 0); // Último dia do mês anterior
-        const consumptionStartDate = new Date(year, monthIndex - 2, 1); // Primeiro dia de dois meses antes
+        const consumptionEndDate = new Date(year, monthIndex, 0);
+        const consumptionStartDate = new Date(year, monthIndex - 2, 1);
         const consumptionYear = consumptionEndDate.getFullYear();
         const consumptionPeriodName = `Leitura de ${monthNames[consumptionStartDate.getMonth()]} a ${monthNames[consumptionEndDate.getMonth()]} de ${consumptionYear}`;
 
-        // --- Período de Faturamento (mês da leitura + mês seguinte) ---
         const firstMonthBilling = readingDate;
         const secondMonthBilling = new Date(year, monthIndex + 1, 1);
         const billingYear = secondMonthBilling.getFullYear();
         const billingPeriodName = `Período de ${monthNames[firstMonthBilling.getMonth()]} a ${monthNames[secondMonthBilling.getMonth()]} de ${billingYear}`;
         
-        // --- Vencimento (dia 15 do mês SEGUINTE ao segundo mês de faturamento) ---
         const billingDueDate = new Date(year, monthIndex + 2, 15);
 
-        // O 'code' interno é baseado no início do faturamento para consistência
         const code = `${String(firstMonthBilling.getMonth() + 1).padStart(2, '0')}/${firstMonthBilling.getFullYear()}`;
 
         return { 
@@ -149,24 +143,25 @@ const Settings = () => {
         let dataToExport = [];
         let headers = [];
 
+        // **LÓGICA DE EXPORTAÇÃO ATUALIZADA**
         if (collectionName === 'readings') {
             const associatesSnap = await getDocs(collection(db, getCollectionPath('associates', userId)));
             const associatesMap = new Map(associatesSnap.docs.map(doc => [doc.id, doc.data()]));
             const periodsMap = new Map(periods.map(p => [p.id, p]));
 
-            headers = ['ID Associado', 'Nome Associado', 'Período de Faturamento', 'Data da Leitura', 'Leitura Anterior', 'Leitura Atual', 'Consumo'];
+            headers = ['id_associado', 'nome_associado', 'periodo_codigo', 'data_leitura', 'leitura_anterior', 'leitura_atual', 'consumo'];
             dataToExport = snapshot.docs.map(doc => {
                 const reading = doc.data();
                 const associate = associatesMap.get(reading.associateId) || {};
                 const period = periodsMap.get(reading.periodId) || {};
                 return {
-                    'ID Associado': associate.sequentialId || '',
-                    'Nome Associado': associate.name || '',
-                    'Período de Faturamento': period.billingPeriodName || '',
-                    'Data da Leitura': formatDate(reading.date),
-                    'Leitura Anterior': reading.previousReading || 0,
-                    'Leitura Atual': reading.currentReading || 0,
-                    'Consumo': reading.consumption || 0
+                    'id_associado': associate.sequentialId || '',
+                    'nome_associado': associate.name || '',
+                    'periodo_codigo': period.code || '',
+                    'data_leitura': formatDate(period.readingDate), // Usando a data do período
+                    'leitura_anterior': reading.previousReading || 0,
+                    'leitura_atual': reading.currentReading || 0,
+                    'consumo': reading.consumption || 0
                 };
             });
         } else {
@@ -238,6 +233,7 @@ const Settings = () => {
                     }
                     if(rowObject.sequentialId > highestSeqId) highestSeqId = rowObject.sequentialId;
 
+                // **LÓGICA DE IMPORTAÇÃO ATUALIZADA**
                 } else if (collectionName === 'readings' && rowObject.sequentialId && rowObject.periodCode) {
                     const associateId = associatesMap.get(rowObject.sequentialId);
                     const currentPeriod = periods.find(p => p.code === rowObject.periodCode);
@@ -249,10 +245,11 @@ const Settings = () => {
                     const readingsSnap = await getDocs(query(collection(db, getCollectionPath('readings', userId)), where('associateId', '==', associateId), where('periodId', '==', previousPeriod?.id)));
                     const previousReading = readingsSnap.empty ? 0 : readingsSnap.docs[0].data().currentReading;
 
+                    // A data é definida pelo período, não pelo CSV.
                     const newReading = {
                         associateId: associateId,
                         periodId: currentPeriod.id,
-                        date: rowObject.date || currentPeriod.readingDate,
+                        date: currentPeriod.readingDate, 
                         currentReading: rowObject.currentReading || 0,
                         previousReading: previousReading,
                         consumption: (rowObject.currentReading || 0) - previousReading
@@ -285,10 +282,11 @@ const Settings = () => {
         event.target.value = '';
     };
 
+    // **MODELO CSV ATUALIZADO**
     const downloadCsvTemplate = (collectionName) => {
         const templates = { 
             associates: ['sequentialId', 'name', 'address', 'contact', 'documentNumber', 'type', 'region', 'generalHydrometerId', 'isActive', 'observations'], 
-            readings: ['sequentialId', 'periodCode', 'currentReading', 'date'],
+            readings: ['sequentialId', 'periodCode', 'currentReading'],
             periods: ['readingDate']
         };
         const headers = templates[collectionName];

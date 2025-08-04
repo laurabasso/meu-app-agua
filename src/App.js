@@ -1,5 +1,6 @@
 /* global __app_id */
 import React, { useState } from 'react';
+import { Routes, Route, NavLink, useNavigate, Navigate } from 'react-router-dom';
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
@@ -34,7 +35,6 @@ function getCollectionPath(collectionName, userId) {
     console.error("UserID indisponível em getCollectionPath.");
     return `artifacts/default-app-id/users/nouser/${collectionName}`;
   }
-  // CORREÇÃO: Adicionado comentário /* global __app_id */ no topo do arquivo para o ESLint.
   const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
   return `/artifacts/${appId}/users/${userId}/${collectionName}`;
 }
@@ -59,7 +59,9 @@ export default function AppWrapper() {
 // Componente Principal
 function App() {
   const { currentUser, handleLogout } = useAuth();
-  const [currentPage, setCurrentPage] = useState('home');
+  const navigate = useNavigate(); // Hook do React Router para navegar programaticamente
+
+  // Mantemos o estado para formulários e detalhes, que funcionam como "modais" sobre a página de associados
   const [associateToEdit, setAssociateToEdit] = useState(null);
   const [viewingAssociateDetails, setViewingAssociateDetails] = useState(null);
 
@@ -72,29 +74,56 @@ function App() {
     formatDate,
   };
 
-  const navigateTo = (page, data = null) => {
-    if (page === 'associateForm') setAssociateToEdit(data);
-    if (page === 'associateDetails') setViewingAssociateDetails(data);
-    setCurrentPage(page);
+  // Funções para abrir as telas de formulário e detalhes
+  const handleEditAssociate = (assoc) => {
+    setAssociateToEdit(assoc);
+    navigate('/associados'); // Garante que a URL base seja a de associados
   };
 
-  const pages = {
-    home: <Home />,
-    associates: <Associates onAddAssociate={() => navigateTo('associateForm', {})} onEditAssociate={(assoc) => navigateTo('associateForm', assoc)} onViewAssociateDetails={(assoc) => navigateTo('associateDetails', assoc)} />,
-    associateForm: <AssociateForm associateToEdit={associateToEdit} onSave={() => navigateTo('associates')} onCancel={() => navigateTo('associates')} />,
-    associateDetails: <AssociateDetails associate={viewingAssociateDetails} onBack={() => navigateTo('associates')} />,
-    readings: <Readings onViewAssociateDetails={(assoc) => navigateTo('associateDetails', assoc)} />,
-    generalHydrometers: <GeneralHydrometers />,
-    invoices: <Invoices />,
-    reports: <Reports />,
-    settings: <Settings />,
-    profile: <Profile />,
+  const handleAddAssociate = () => {
+    setAssociateToEdit({}); // Objeto vazio para indicar criação
+    navigate('/associados');
   };
 
-  const pageNames = {
-      home: 'Início', associates: 'Associados', readings: 'Leituras', 
-      generalHydrometers: 'Hidrômetros Gerais', invoices: 'Faturas', 
-      reports: 'Relatórios', settings: 'Configurações', profile: 'Perfil'
+  const handleViewDetails = (assoc) => {
+    setViewingAssociateDetails(assoc);
+    navigate('/associados');
+  };
+  
+  const handleCloseForms = () => {
+      setAssociateToEdit(null);
+      setViewingAssociateDetails(null);
+      navigate('/associados');
+  }
+
+  const renderCurrentView = () => {
+    if (viewingAssociateDetails) {
+        return <AssociateDetails associate={viewingAssociateDetails} onBack={handleCloseForms} />;
+    }
+    if (associateToEdit) {
+        return <AssociateForm associateToEdit={associateToEdit} onSave={handleCloseForms} onCancel={handleCloseForms} />;
+    }
+    // Renderiza as rotas principais se nenhuma tela "modal" estiver ativa
+    return (
+        <Routes>
+            <Route path="/home" element={<Home />} />
+            <Route path="/associados" element={<Associates onAddAssociate={handleAddAssociate} onEditAssociate={handleEditAssociate} onViewAssociateDetails={handleViewDetails} />} />
+            <Route path="/leituras" element={<Readings onViewAssociateDetails={handleViewDetails} />} />
+            <Route path="/hidrometros" element={<GeneralHydrometers />} />
+            <Route path="/faturas" element={<Invoices />} />
+            <Route path="/relatorios" element={<Reports />} />
+            <Route path="/configuracoes" element={<Settings />} />
+            <Route path="/perfil" element={<Profile />} />
+            {/* Rota padrão para redirecionar para /home */}
+            <Route path="*" element={<Navigate to="/home" replace />} />
+        </Routes>
+    );
+  };
+  
+  const navLinks = {
+      home: 'Início', associates: 'Associados', leituras: 'Leituras', 
+      hidrometros: 'Hidrômetros Gerais', faturas: 'Faturas', 
+      relatorios: 'Relatórios', configuracoes: 'Configurações', perfil: 'Perfil'
   };
 
   return (
@@ -105,17 +134,23 @@ function App() {
           <div className="container mx-auto flex flex-col md:flex-row justify-between items-center">
             <h1 className="text-white text-2xl font-bold mb-4 md:mb-0">Controle de Água ACAJUVI</h1>
             <div className="flex flex-wrap justify-center gap-2">
-              {Object.keys(pageNames).map(pageKey => (
-                <button key={pageKey} onClick={() => navigateTo(pageKey)}
-                  className={`px-4 py-2 text-sm rounded-lg font-semibold transition ${currentPage === pageKey ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-600'}`}>
-                  {pageNames[pageKey]}
-                </button>
+              {Object.entries(navLinks).map(([path, name]) => (
+                <NavLink 
+                  key={path} 
+                  to={`/${path}`}
+                  style={({ isActive }) => ({
+                    backgroundColor: isActive ? '#1e40af' : '', // bg-blue-800
+                  })}
+                  className="px-4 py-2 text-sm rounded-lg font-semibold text-blue-100 hover:bg-blue-600 transition"
+                >
+                  {name}
+                </NavLink>
               ))}
               {currentUser && <button onClick={handleLogout} className="px-4 py-2 text-sm rounded-lg font-semibold bg-red-600 text-white hover:bg-red-700">Sair</button>}
             </div>
           </div>
         </nav>
-        <main className="container mx-auto p-4">{pages[currentPage] || <Home />}</main>
+        <main className="container mx-auto p-4">{renderCurrentView()}</main>
       </div>
     </AppContext.Provider>
   );
