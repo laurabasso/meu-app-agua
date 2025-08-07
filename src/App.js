@@ -1,6 +1,6 @@
 /* global __app_id */
 import React from 'react';
-import { Routes, Route, NavLink, Navigate } from 'react-router-dom';
+import { Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom';
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
@@ -24,12 +24,10 @@ import RequireAuth from './components/Auth/RequireAuth';
 import { AppContext } from './AppContext';
 import firebaseConfig from './firebaseConfig';
 
-// Inicialização do Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// Funções utilitárias
 function getCollectionPath(collectionName, userId) {
     if (!userId) {
         console.error("UserID indisponível em getCollectionPath.");
@@ -45,7 +43,6 @@ function formatDate(dateStr) {
     return !isNaN(d.getTime()) ? d.toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'Data inválida';
 }
 
-// Componente Wrapper
 export default function AppWrapper() {
     return (
         <AuthProvider>
@@ -56,17 +53,11 @@ export default function AppWrapper() {
     );
 }
 
-// Componente Principal
 function App() {
     const { currentUser, handleLogout } = useAuth();
 
     const appContextValue = {
-        db,
-        auth,
-        userId: currentUser?.uid,
-        currentUser,
-        getCollectionPath,
-        formatDate,
+        db, auth, userId: currentUser?.uid, currentUser, getCollectionPath, formatDate,
     };
 
     const navLinks = {
@@ -84,13 +75,7 @@ function App() {
                         <h1 className="text-white text-2xl font-bold mb-4 md:mb-0">Controle de Água ACAJUVI</h1>
                         <div className="flex flex-wrap justify-center gap-2">
                             {Object.entries(navLinks).map(([path, name]) => (
-                                <NavLink
-                                    key={path}
-                                    to={`/${path}`}
-                                    className={({ isActive }) => 
-                                        `px-4 py-2 text-sm rounded-lg font-semibold text-blue-100 hover:bg-blue-600 transition ${isActive ? 'bg-blue-800' : ''}`
-                                    }
-                                >
+                                <NavLink key={path} to={`/${path}`} className={({ isActive }) => `px-4 py-2 text-sm rounded-lg font-semibold text-blue-100 hover:bg-blue-600 transition ${isActive ? 'bg-blue-800' : ''}`}>
                                     {name}
                                 </NavLink>
                             ))}
@@ -99,22 +84,18 @@ function App() {
                     </div>
                 </nav>
                 <main className="container mx-auto p-4">
-                    {/* A Mágica Acontece Aqui: O <Routes> controla tudo! */}
                     <Routes>
                         <Route path="/home" element={<Home />} />
                         <Route path="/associados" element={<Associates />} />
                         <Route path="/associados/novo" element={<AssociateForm />} />
                         <Route path="/associados/editar/:id" element={<AssociateForm />} />
                         <Route path="/associados/detalhes/:id" element={<AssociateDetails />} />
-
                         <Route path="/leituras" element={<Readings />} />
                         <Route path="/hidrometros" element={<GeneralHydrometers />} />
                         <Route path="/faturas" element={<Invoices />} />
                         <Route path="/relatorios" element={<Reports />} />
                         <Route path="/configuracoes" element={<Settings />} />
                         <Route path="/perfil" element={<Profile />} />
-                        
-                        {/* Se nenhuma rota combinar, redireciona para /home */}
                         <Route path="*" element={<Navigate to="/home" replace />} />
                     </Routes>
                 </main>
