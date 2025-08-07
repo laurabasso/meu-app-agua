@@ -87,10 +87,9 @@ function App() {
                                 <NavLink
                                     key={path}
                                     to={`/${path}`}
-                                    style={({ isActive }) => ({
-                                        backgroundColor: isActive ? '#1e40af' : '', // bg-blue-800
-                                    })}
-                                    className="px-4 py-2 text-sm rounded-lg font-semibold text-blue-100 hover:bg-blue-600 transition"
+                                    className={({ isActive }) => 
+                                        `px-4 py-2 text-sm rounded-lg font-semibold text-blue-100 hover:bg-blue-600 transition ${isActive ? 'bg-blue-800' : ''}`
+                                    }
                                 >
                                     {name}
                                 </NavLink>
@@ -100,6 +99,7 @@ function App() {
                     </div>
                 </nav>
                 <main className="container mx-auto p-4">
+                    {/* A Mágica Acontece Aqui: O <Routes> controla tudo! */}
                     <Routes>
                         <Route path="/home" element={<Home />} />
                         <Route path="/associados" element={<Associates />} />
@@ -113,6 +113,8 @@ function App() {
                         <Route path="/relatorios" element={<Reports />} />
                         <Route path="/configuracoes" element={<Settings />} />
                         <Route path="/perfil" element={<Profile />} />
+                        
+                        {/* Se nenhuma rota combinar, redireciona para /home */}
                         <Route path="*" element={<Navigate to="/home" replace />} />
                     </Routes>
                 </main>
