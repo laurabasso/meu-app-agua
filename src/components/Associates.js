@@ -1,29 +1,22 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, doc, deleteDoc, getDocs, query, where } from 'firebase/firestore';
-import { useNavigate } from 'react-router-dom'; // 1. Importar useNavigate
+import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../AppContext';
 import Button from './Button';
 import AssociatesFilterModal from './AssociatesFilterModal';
 import Modal from './Modal';
 
-// Componente para o ícone de ordenação
 const SortIcon = ({ direction }) => {
     if (!direction) return null;
     return direction === 'ascending' ? ' ▲' : ' ▼';
 };
 
-// 2. Remover as props de navegação
-const Associates = () => { 
-    const navigate = useNavigate(); // 3. Inicializar o hook de navegação
+const Associates = () => {
+    const navigate = useNavigate();
     const context = useAppContext();
     const [associates, setAssociates] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
-    const [filter, setFilter] = useState({ 
-        status: 'all', 
-        region: 'all', 
-        generalHydrometerId: 'all', 
-        type: 'all' 
-    });
+    const [filter, setFilter] = useState({ status: 'all', region: 'all', generalHydrometerId: 'all', type: 'all' });
     const [isFilterModalOpen, setFilterModalOpen] = useState(false);
     const [modalContent, setModalContent] = useState({ title: '', message: '' });
     const [showModal, setShowModal] = useState(false);
@@ -32,7 +25,6 @@ const Associates = () => {
 
     const sortedAndFilteredAssociates = useMemo(() => {
         let filtered = [...associates];
-
         filtered = filtered.filter(assoc => {
             const name = assoc.name || '';
             const seqId = assoc.sequentialId || '';
@@ -43,38 +35,25 @@ const Associates = () => {
             const matchesType = filter.type === 'all' || assoc.type === filter.type;
             return matchesSearch && matchesStatus && matchesRegion && matchesHydrometer && matchesType;
         });
-
         if (sortConfig.key) {
             filtered.sort((a, b) => {
                 const valA = a[sortConfig.key];
                 const valB = b[sortConfig.key];
-                
-                if (valA < valB) {
-                    return sortConfig.direction === 'ascending' ? -1 : 1;
-                }
-                if (valA > valB) {
-                    return sortConfig.direction === 'ascending' ? 1 : -1;
-                }
+                if (valA < valB) return sortConfig.direction === 'ascending' ? -1 : 1;
+                if (valA > valB) return sortConfig.direction === 'ascending' ? 1 : -1;
                 return 0;
             });
         }
-
         return filtered;
     }, [associates, searchTerm, filter, sortConfig]);
-    
+
     useEffect(() => {
         if (!context || !context.userId) return;
-        
         const { db, getCollectionPath, userId } = context;
-        
-        const associatesColRef = collection(db, getCollectionPath('associates', userId));
-        const unsubAssociates = onSnapshot(associatesColRef, (snapshot) => {
-            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setAssociates(data);
+        const unsubAssociates = onSnapshot(collection(db, getCollectionPath('associates', userId)), (snapshot) => {
+            setAssociates(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         });
-
-        const settingsDocRef = doc(db, getCollectionPath('settings', userId), 'config');
-        const unsubSettings = onSnapshot(settingsDocRef, (docSnap) => {
+        const unsubSettings = onSnapshot(doc(db, getCollectionPath('settings', userId), 'config'), (docSnap) => {
             if (docSnap.exists()) {
                 const settings = docSnap.data();
                 setFilterOptions({
@@ -83,43 +62,27 @@ const Associates = () => {
                 });
             }
         });
-
-        return () => {
-            unsubAssociates();
-            unsubSettings();
-        };
+        return () => { unsubAssociates(); unsubSettings(); };
     }, [context]);
 
-    if (!context || !context.userId) {
-        return <div className="text-center p-10 font-semibold">Carregando...</div>;
-    }
-    
+    if (!context || !context.userId) return <div className="text-center p-10 font-semibold">Carregando...</div>;
     const { db, getCollectionPath, userId } = context;
 
     const requestSort = (key) => {
         let direction = 'ascending';
-        if (sortConfig.key === key && sortConfig.direction === 'ascending') {
-            direction = 'descending';
-        }
+        if (sortConfig.key === key && sortConfig.direction === 'ascending') direction = 'descending';
         setSortConfig({ key, direction });
     };
 
     const handleDeleteAssociate = async (associateId) => {
         const readingsQuery = query(collection(db, getCollectionPath('readings', userId)), where('associateId', '==', associateId));
         const invoicesQuery = query(collection(db, getCollectionPath('invoices', userId)), where('associateId', '==', associateId));
-        const readingsSnap = await getDocs(readingsQuery);
-        const invoicesSnap = await getDocs(invoicesQuery);
-
-        if (!readingsSnap.empty || !invoicesSnap.empty) {
-            setModalContent({ title: 'Exclusão Bloqueada', message: 'Este associado possui leituras ou faturas em seu histórico e não pode ser excluído.' });
-            setShowModal(true);
-            return;
+        if (!(await getDocs(readingsQuery)).empty || !(await getDocs(invoicesQuery)).empty) {
+            setModalContent({ title: 'Exclusão Bloqueada', message: 'Este associado possui leituras ou faturas e não pode ser excluído.' });
+            setShowModal(true); return;
         }
-
         setModalContent({
-            title: 'Confirmar Exclusão',
-            message: 'Tem certeza que deseja excluir este associado?',
-            type: 'confirm',
+            title: 'Confirmar Exclusão', message: 'Tem certeza que deseja excluir este associado?', type: 'confirm',
             onConfirm: async () => {
                 await deleteDoc(doc(db, getCollectionPath('associates', userId), associateId));
                 setShowModal(false);
@@ -140,17 +103,10 @@ const Associates = () => {
         <div className="p-4 md:p-8 bg-white rounded-xl shadow-lg max-w-7xl mx-auto my-8 font-inter">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-3xl font-bold text-gray-800">Associados</h2>
-                {/* 4. Atualizar o onClick para navegar para a nova rota */}
                 <Button onClick={() => navigate('/associados/novo')} variant="primary">Adicionar Associado</Button>
             </div>
             <div className="flex flex-col md:flex-row gap-4 mb-6">
-                <input
-                    type="text"
-                    placeholder="Buscar por nome ou ID..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full p-3 border rounded-lg"
-                />
+                <input type="text" placeholder="Buscar por nome ou ID..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full p-3 border rounded-lg" />
                 <Button onClick={() => setFilterModalOpen(true)} variant="secondary">Filtros Avançados</Button>
             </div>
             <div className="overflow-x-auto rounded-xl shadow-md">
@@ -174,13 +130,8 @@ const Associates = () => {
                                 <td className="py-3 px-4">{assoc.region}</td>
                                 <td className="py-3 px-4 text-sm text-gray-600">{assoc.generalHydrometerId}</td>
                                 <td className="py-3 px-4">{assoc.type}</td>
-                                <td className="py-3 px-4">
-                                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${assoc.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                        {assoc.isActive ? 'Ativo' : 'Inativo'}
-                                    </span>
-                                </td>
+                                <td className="py-3 px-4"><span className={`px-2 py-1 rounded-full text-xs font-semibold ${assoc.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{assoc.isActive ? 'Ativo' : 'Inativo'}</span></td>
                                 <td className="py-3 px-4 space-x-2 whitespace-nowrap">
-                                    {/* 4. Atualizar os onClicks para navegar para as novas rotas */}
                                     <Button onClick={() => navigate(`/associados/detalhes/${assoc.id}`)} size="xs" variant="info">Ver</Button>
                                     <Button onClick={() => navigate(`/associados/editar/${assoc.id}`)} size="xs" variant="secondary">Editar</Button>
                                     <Button onClick={() => handleDeleteAssociate(assoc.id)} size="xs" variant="danger">Excluir</Button>
@@ -190,14 +141,7 @@ const Associates = () => {
                     </tbody>
                 </table>
             </div>
-            {isFilterModalOpen && (
-                <AssociatesFilterModal
-                    filter={filter}
-                    onFilterChange={setFilter}
-                    onClose={() => setFilterModalOpen(false)}
-                    options={filterOptions}
-                />
-            )}
+            {isFilterModalOpen && <AssociatesFilterModal filter={filter} onFilterChange={setFilter} onClose={() => setFilterModalOpen(false)} options={filterOptions} />}
             <Modal {...modalContent} show={showModal} onConfirm={modalContent.onConfirm} onCancel={() => setShowModal(false)} />
         </div>
     );
