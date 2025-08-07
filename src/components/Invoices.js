@@ -5,7 +5,6 @@ import Modal from './Modal';
 import Button from './Button';
 import LabeledInput from './LabeledInput';
 import jsPDF from 'jspdf';
-// CORREÇÃO: Importando o autoTable para que a função seja reconhecida.
 import autoTable from 'jspdf-autotable';
 import JSZip from 'jszip';
 
@@ -159,10 +158,14 @@ const Invoices = () => {
         });
     };
     
+    // **FUNÇÃO CORRIGIDA**
     const handleExportSummaryPdf = async () => {
-        const period = periods.find(p => p.id === filter.periodId);
+        // Usa o ID do filtro, ou o ID do primeiro período (mais recente) se 'Todos' estiver selecionado.
+        const targetPeriodId = filter.periodId === 'all' ? (periods[0]?.id || '') : filter.periodId;
+        const period = periods.find(p => p.id === targetPeriodId);
+
         if (!period) {
-             setModalContent({ title: 'Erro', message: 'Por favor, selecione um período válido para gerar o resumo.' });
+             setModalContent({ title: 'Erro', message: 'Nenhum período encontrado para gerar o resumo.' });
              setShowModal(true); return;
         }
         
@@ -261,7 +264,7 @@ const Invoices = () => {
         doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
         doc.text(`PIX: ${acajuviInfo.pixKey || 'N/A'} | Banco: ${acajuviInfo.bankName || 'N/A'} - Ag: ${acajuviInfo.bankAgency || 'N/A'} - Cc: ${acajuviInfo.bankAccountNumber || 'N/A'}`, 105, yOffset + 88, { align: 'center' });
         if (reading?.isReset) { doc.setFontSize(8); doc.text('🔄 Contagem reiniciada neste período.', 15, yOffset + 92); }
-        doc.line(10, yOffset + 99, 200, yOffset + 99, 'D'); // Linha de recorte
+        doc.line(10, yOffset + 99, 200, yOffset + 99, 'D');
     };
 
     const handleGenerateZip = async () => {
@@ -289,7 +292,7 @@ const Invoices = () => {
                 const regionInvoices = invoicesByRegion[region].sort((a, b) => (a.associate.sequentialId || 0) - (b.associate.sequentialId || 0));
                 
                 regionInvoices.forEach((item, index) => {
-                    const yOffset = (index % 3) * 99; // 0, 99, 198
+                    const yOffset = (index % 3) * 99; 
                     if (index > 0 && index % 3 === 0) {
                         doc.addPage();
                     }

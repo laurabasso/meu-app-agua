@@ -1,6 +1,6 @@
 /* global __app_id */
-import React, { useState } from 'react';
-import { Routes, Route, NavLink, useNavigate, Navigate } from 'react-router-dom';
+import React from 'react';
+import { Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
@@ -59,11 +59,6 @@ export default function AppWrapper() {
 // Componente Principal
 function App() {
   const { currentUser, handleLogout } = useAuth();
-  const navigate = useNavigate(); // Hook do React Router para navegar programaticamente
-
-  // Mantemos o estado para formulários e detalhes, que funcionam como "modais" sobre a página de associados
-  const [associateToEdit, setAssociateToEdit] = useState(null);
-  const [viewingAssociateDetails, setViewingAssociateDetails] = useState(null);
 
   const appContextValue = {
     db,
@@ -73,55 +68,9 @@ function App() {
     getCollectionPath,
     formatDate,
   };
-
-  // Funções para abrir as telas de formulário e detalhes
-  const handleEditAssociate = (assoc) => {
-    setAssociateToEdit(assoc);
-    navigate('/associados'); // Garante que a URL base seja a de associados
-  };
-
-  const handleAddAssociate = () => {
-    setAssociateToEdit({}); // Objeto vazio para indicar criação
-    navigate('/associados');
-  };
-
-  const handleViewDetails = (assoc) => {
-    setViewingAssociateDetails(assoc);
-    navigate('/associados');
-  };
-  
-  const handleCloseForms = () => {
-      setAssociateToEdit(null);
-      setViewingAssociateDetails(null);
-      navigate('/associados');
-  }
-
-  const renderCurrentView = () => {
-    if (viewingAssociateDetails) {
-        return <AssociateDetails associate={viewingAssociateDetails} onBack={handleCloseForms} />;
-    }
-    if (associateToEdit) {
-        return <AssociateForm associateToEdit={associateToEdit} onSave={handleCloseForms} onCancel={handleCloseForms} />;
-    }
-    // Renderiza as rotas principais se nenhuma tela "modal" estiver ativa
-    return (
-        <Routes>
-            <Route path="/home" element={<Home />} />
-            <Route path="/associados" element={<Associates onAddAssociate={handleAddAssociate} onEditAssociate={handleEditAssociate} onViewAssociateDetails={handleViewDetails} />} />
-            <Route path="/leituras" element={<Readings onViewAssociateDetails={handleViewDetails} />} />
-            <Route path="/hidrometros" element={<GeneralHydrometers />} />
-            <Route path="/faturas" element={<Invoices />} />
-            <Route path="/relatorios" element={<Reports />} />
-            <Route path="/configuracoes" element={<Settings />} />
-            <Route path="/perfil" element={<Profile />} />
-            {/* Rota padrão para redirecionar para /home */}
-            <Route path="*" element={<Navigate to="/home" replace />} />
-        </Routes>
-    );
-  };
   
   const navLinks = {
-      home: 'Início', associates: 'Associados', leituras: 'Leituras', 
+      home: 'Início', associates: 'Associados', readings: 'Leituras', 
       hidrometros: 'Hidrômetros Gerais', faturas: 'Faturas', 
       relatorios: 'Relatórios', configuracoes: 'Configurações', perfil: 'Perfil'
   };
@@ -150,7 +99,26 @@ function App() {
             </div>
           </div>
         </nav>
-        <main className="container mx-auto p-4">{renderCurrentView()}</main>
+        <main className="container mx-auto p-4">
+            <Routes>
+                <Route path="/home" element={<Home />} />
+                <Route path="/associados" element={<Associates />} />
+                {/* Rotas para o formulário de associado */}
+                <Route path="/associados/novo" element={<AssociateForm />} />
+                <Route path="/associados/editar/:id" element={<AssociateForm />} />
+                {/* Rotas para detalhes do associado */}
+                <Route path="/associados/detalhes/:id" element={<AssociateDetails />} />
+                
+                <Route path="/leituras" element={<Readings />} />
+                <Route path="/hidrometros" element={<GeneralHydrometers />} />
+                <Route path="/faturas" element={<Invoices />} />
+                <Route path="/relatorios" element={<Reports />} />
+                <Route path="/configuracoes" element={<Settings />} />
+                <Route path="/perfil" element={<Profile />} />
+                {/* Rota padrão para redirecionar para /home */}
+                <Route path="*" element={<Navigate to="/home" replace />} />
+            </Routes>
+        </main>
       </div>
     </AppContext.Provider>
   );

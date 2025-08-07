@@ -1,17 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { doc, setDoc, addDoc, collection, onSnapshot, runTransaction } from 'firebase/firestore';
+import { useParams, useNavigate } from 'react-router-dom';
+import { doc, setDoc, addDoc, collection, onSnapshot, runTransaction, getDoc } from 'firebase/firestore';
 import { useAppContext } from '../AppContext';
 import Button from './Button';
 import LabeledInput from './LabeledInput';
 import Modal from './Modal';
 
-const AssociateForm = ({ associateToEdit, onSave, onCancel }) => {
+// Remover props, pois agora os dados virão da URL
+const AssociateForm = () => {
+    const { id } = useParams(); // Hook para pegar o :id da URL
+    const navigate = useNavigate(); // Hook para navegar
     const context = useAppContext();
-    const [associate, setAssociate] = useState(associateToEdit || { isActive: true, type: 'Associado' });
+    const [associate, setAssociate] = useState({ isActive: true, type: 'Associado' });
     const [regions, setRegions] = useState([]);
     const [generalHydrometers, setGeneralHydrometers] = useState([]);
     const [showModal, setShowModal] = useState(false);
     const [modalContent, setModalContent] = useState({ title: '', message: '' });
+    const [isLoading, setIsLoading] = useState(true);
+
+    // Efeito para buscar os dados do associado se um ID for fornecido na URL
+    useEffect(() => {
+        if (id && context && context.userId) {
+            const { db, getCollectionPath, userId } = context;
+            const docRef = doc(db, getCollectionPath('associates', userId), id);
+            getDoc(docRef).then(docSnap => {
+                if (docSnap.exists()) {
+                    setAssociate({ id: docSnap.id, ...docSnap.data() });
+                }
+                setIsLoading(false);
+            });
+        } else {
+            setIsLoading(false);
+        }
+    }, [id, context]);
 
     useEffect(() => {
         if (!context || !context.userId) return;
@@ -28,7 +49,7 @@ const AssociateForm = ({ associateToEdit, onSave, onCancel }) => {
         return unsubscribe;
     }, [context]);
 
-    if (!context || !context.userId) {
+    if (isLoading || !context || !context.userId) {
         return <div className="text-center p-10 font-semibold">Carregando...</div>;
     }
     
@@ -46,13 +67,12 @@ const AssociateForm = ({ associateToEdit, onSave, onCancel }) => {
         }
 
         try {
-            if (associate.id) { // Modo de Edição
+            if (associate.id) {
                 const associateRef = doc(db, getCollectionPath('associates', userId), associate.id);
                 await setDoc(associateRef, associate, { merge: true });
-                onSave();
-            } else { // MELHORIA: Modo de Criação com ID Sequencial Automático e seguro (transação)
+                navigate('/associados');
+            } else {
                 const settingsRef = doc(db, getCollectionPath('settings', userId), 'config');
-                
                 await runTransaction(db, async (transaction) => {
                     const settingsSnap = await transaction.get(settingsRef);
                     if (!settingsSnap.exists()) {
@@ -67,7 +87,7 @@ const AssociateForm = ({ associateToEdit, onSave, onCancel }) => {
                     transaction.set(newAssociateRef, newAssociateData);
                     transaction.update(settingsRef, { nextSequentialId: nextId + 1 });
                 });
-                onSave();
+                navigate('/associados');
             }
         } catch (e) {
             console.error("Erro ao salvar associado: ", e);
@@ -75,12 +95,15 @@ const AssociateForm = ({ associateToEdit, onSave, onCancel }) => {
             setShowModal(true);
         }
     };
+    
+    const handleCancel = () => {
+        navigate('/associados');
+    }
 
     return (
         <div className="p-4 md:p-8 bg-white rounded-xl shadow-lg max-w-2xl mx-auto my-8 font-inter">
-            <h2 className="text-3xl font-bold text-gray-800 mb-6">{associate.id ? 'Editar Associado' : 'Adicionar Novo Associado'}</h2>
+            <h2 className="text-3xl font-bold text-gray-800 mb-6">{id ? 'Editar Associado' : 'Adicionar Novo Associado'}</h2>
             <div className="space-y-4">
-                {/* O ID sequencial agora é exibido, mas não editável no modo de criação */}
                 {associate.id && (
                     <LabeledInput label="ID Sequencial" type="number" value={associate.sequentialId || ''} onChange={e => handleChange('sequentialId', parseInt(e.target.value, 10))} />
                 )}
@@ -122,7 +145,7 @@ const AssociateForm = ({ associateToEdit, onSave, onCancel }) => {
                 />
             </div>
             <div className="flex justify-end gap-4 mt-8">
-                <Button onClick={onCancel} variant="secondary">Cancelar</Button>
+                <Button onClick={handleCancel} variant="secondary">Cancelar</Button>
                 <Button onClick={handleSave} variant="primary">Salvar</Button>
             </div>
             <Modal {...modalContent} show={showModal} onConfirm={() => setShowModal(false)} />

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, doc, deleteDoc, getDocs, query, where } from 'firebase/firestore';
+import { useNavigate } from 'react-router-dom'; // 1. Importar useNavigate
 import { useAppContext } from '../AppContext';
 import Button from './Button';
 import AssociatesFilterModal from './AssociatesFilterModal';
@@ -11,8 +12,9 @@ const SortIcon = ({ direction }) => {
     return direction === 'ascending' ? ' ▲' : ' ▼';
 };
 
-const Associates = ({ onAddAssociate, onEditAssociate, onViewAssociateDetails }) => {
-    // CORREÇÃO: Todos os hooks (useState, useEffect, useMemo, useAppContext) são chamados no topo, incondicionalmente.
+// 2. Remover as props de navegação
+const Associates = () => { 
+    const navigate = useNavigate(); // 3. Inicializar o hook de navegação
     const context = useAppContext();
     const [associates, setAssociates] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -28,11 +30,9 @@ const Associates = ({ onAddAssociate, onEditAssociate, onViewAssociateDetails })
     const [filterOptions, setFilterOptions] = useState({ regions: [], generalHydrometers: [] });
     const [sortConfig, setSortConfig] = useState({ key: 'sequentialId', direction: 'ascending' });
 
-    // A lógica de filtragem e ordenação agora está em um useMemo, que também é um hook e deve ser chamado no topo.
     const sortedAndFilteredAssociates = useMemo(() => {
         let filtered = [...associates];
 
-        // Aplica filtros
         filtered = filtered.filter(assoc => {
             const name = assoc.name || '';
             const seqId = assoc.sequentialId || '';
@@ -44,7 +44,6 @@ const Associates = ({ onAddAssociate, onEditAssociate, onViewAssociateDetails })
             return matchesSearch && matchesStatus && matchesRegion && matchesHydrometer && matchesType;
         });
 
-        // Aplica ordenação
         if (sortConfig.key) {
             filtered.sort((a, b) => {
                 const valA = a[sortConfig.key];
@@ -64,7 +63,6 @@ const Associates = ({ onAddAssociate, onEditAssociate, onViewAssociateDetails })
     }, [associates, searchTerm, filter, sortConfig]);
     
     useEffect(() => {
-        // A lógica DENTRO do hook pode ser condicional.
         if (!context || !context.userId) return;
         
         const { db, getCollectionPath, userId } = context;
@@ -92,7 +90,6 @@ const Associates = ({ onAddAssociate, onEditAssociate, onViewAssociateDetails })
         };
     }, [context]);
 
-    // CORREÇÃO: A verificação de segurança para a renderização da UI acontece DEPOIS de todos os hooks.
     if (!context || !context.userId) {
         return <div className="text-center p-10 font-semibold">Carregando...</div>;
     }
@@ -143,7 +140,8 @@ const Associates = ({ onAddAssociate, onEditAssociate, onViewAssociateDetails })
         <div className="p-4 md:p-8 bg-white rounded-xl shadow-lg max-w-7xl mx-auto my-8 font-inter">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-3xl font-bold text-gray-800">Associados</h2>
-                <Button onClick={onAddAssociate} variant="primary">Adicionar Associado</Button>
+                {/* 4. Atualizar o onClick para navegar para a nova rota */}
+                <Button onClick={() => navigate('/associados/novo')} variant="primary">Adicionar Associado</Button>
             </div>
             <div className="flex flex-col md:flex-row gap-4 mb-6">
                 <input
@@ -182,8 +180,9 @@ const Associates = ({ onAddAssociate, onEditAssociate, onViewAssociateDetails })
                                     </span>
                                 </td>
                                 <td className="py-3 px-4 space-x-2 whitespace-nowrap">
-                                    <Button onClick={() => onViewAssociateDetails(assoc)} size="xs" variant="info">Ver</Button>
-                                    <Button onClick={() => onEditAssociate(assoc)} size="xs" variant="secondary">Editar</Button>
+                                    {/* 4. Atualizar os onClicks para navegar para as novas rotas */}
+                                    <Button onClick={() => navigate(`/associados/detalhes/${assoc.id}`)} size="xs" variant="info">Ver</Button>
+                                    <Button onClick={() => navigate(`/associados/editar/${assoc.id}`)} size="xs" variant="secondary">Editar</Button>
                                     <Button onClick={() => handleDeleteAssociate(assoc.id)} size="xs" variant="danger">Excluir</Button>
                                 </td>
                             </tr>
