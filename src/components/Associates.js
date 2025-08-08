@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, doc, deleteDoc, getDocs, query, where } from 'firebase/firestore';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom'; // Importar o hook de navegação
 import { useAppContext } from '../AppContext';
 import Button from './Button';
 import AssociatesFilterModal from './AssociatesFilterModal';
@@ -11,8 +11,9 @@ const SortIcon = ({ direction }) => {
     return direction === 'ascending' ? ' ▲' : ' ▼';
 };
 
-const Associates = () => {
-    const navigate = useNavigate();
+// Remover as props de navegação do componente
+const Associates = () => { 
+    const navigate = useNavigate(); // Inicializar o hook
     const context = useAppContext();
     const [associates, setAssociates] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');

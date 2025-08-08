@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, doc, updateDoc, addDoc, query, where, getDocs, setDoc, writeBatch } from 'firebase/firestore';
+import { useNavigate } from 'react-router-dom'; // Importar o hook de navegação
 import { useAppContext } from '../AppContext';
 import Modal from './Modal';
 import LabeledInput from './LabeledInput';
 import Button from './Button';
 import ReadingsFilterModal from './ReadingsFilterModal';
 
-// Componente para o ícone de ordenação
 const SortIcon = ({ direction }) => {
     if (!direction) return null;
     return direction === 'ascending' ? ' ▲' : ' ▼';
 };
 
-const Readings = ({ onViewAssociateDetails }) => {
+// Remover a prop de navegação
+const Readings = () => {
+    const navigate = useNavigate(); // Inicializar o hook
     const context = useAppContext();
     const [readings, setReadings] = useState([]);
     const [associates, setAssociates] = useState([]);
@@ -93,20 +95,13 @@ const Readings = ({ onViewAssociateDetails }) => {
         if (!settings || !settings.tariffs || !associate) return 0;
         const tariff = settings.tariffs[associate.type] || settings.tariffs['Associado'];
         if (!tariff) return 0;
-
         const { standardMeters = 0, fixedFee = 0, excessTariff = 0 } = tariff;
-
         let amount = fixedFee;
-
         if (consumption > standardMeters) {
             const excessConsumption = consumption - standardMeters;
             amount += excessConsumption * excessTariff;
         }
-        
-        if (associate.type === 'Outro' && consumption === 0) {
-            return 0;
-        }
-
+        if (associate.type === 'Outro' && consumption === 0) return 0;
         return amount;
     };
 
@@ -116,10 +111,8 @@ const Readings = ({ onViewAssociateDetails }) => {
         const previousPeriod = periodIndex > -1 && periods[periodIndex + 1] ? periods[periodIndex + 1] : null;
         const prevReadingDoc = previousPeriod ? readings.find(r => r.associateId === associateId && r.periodId === previousPeriod.id) : null;
         const prevReadingValue = prevReadingDoc ? prevReadingDoc.currentReading : 0;
-        
         const currentReadingDoc = readings.find(r => r.associateId === associateId && r.periodId === periodId);
         const currReadingValue = currentReadingDoc ? currentReadingDoc.currentReading : 0;
-        
         let consumption = 0;
         if (currentReadingDoc) {
             if (currentReadingDoc.isReset) {
@@ -128,13 +121,7 @@ const Readings = ({ onViewAssociateDetails }) => {
                 consumption = currReadingValue - prevReadingValue;
             }
         }
-
-        return { 
-            currentReading: currReadingValue, 
-            previousReading: prevReadingValue, 
-            currentReadingDoc, 
-            consumption 
-        };
+        return { currentReading: currReadingValue, previousReading: prevReadingValue, currentReadingDoc, consumption };
     };
 
     const createOrUpdateInvoice = async (batch, readingData) => {
@@ -158,40 +145,21 @@ const Readings = ({ onViewAssociateDetails }) => {
     const handleSaveReading = async (associateId) => {
         const value = editableReadings[associateId];
         if (value === undefined || value === '' || !selectedPeriodId) return;
-
-        // **NOVA LÓGICA:** Busca o objeto do período selecionado para obter a data de leitura.
         const selectedPeriod = periods.find(p => p.id === selectedPeriodId);
         if (!selectedPeriod) {
             setModalContent({ title: 'Erro', message: 'Período selecionado não encontrado.' });
-            setShowModal(true);
-            return;
+            setShowModal(true); return;
         }
-
         const { currentReadingDoc, previousReading } = getReadingsForAssociate(associateId, selectedPeriodId);
         const parsedValue = parseFloat(value);
-        
         if (isNaN(parsedValue) || (parsedValue < previousReading && !currentReadingDoc?.isReset)) {
             setModalContent({ title: 'Leitura Inválida', message: 'A leitura atual não pode ser menor que a anterior.', onConfirm: () => setShowModal(false) });
             setShowModal(true); return;
         }
-
         const consumption = currentReadingDoc?.isReset ? parsedValue : parsedValue - previousReading;
-        
-        // **ALTERAÇÃO PRINCIPAL:** O campo 'date' agora usa a 'readingDate' do período selecionado.
-        const readingData = { 
-            associateId, 
-            periodId: selectedPeriodId, 
-            date: selectedPeriod.readingDate, // A data da leitura é a data de início do período.
-            currentReading: parsedValue, 
-            previousReading, 
-            consumption 
-        };
-        
+        const readingData = { associateId, periodId: selectedPeriodId, date: selectedPeriod.readingDate, currentReading: parsedValue, previousReading, consumption };
         const batch = writeBatch(db);
         let savedReadingId;
-        
-        // A lógica para criar ou atualizar a leitura já existe e está correta.
-        // Ela impede a criação de uma nova leitura se já houver uma para o associado no período.
         if (currentReadingDoc) {
             const readingRef = doc(db, getCollectionPath('readings', userId), currentReadingDoc.id);
             batch.update(readingRef, readingData);
@@ -201,15 +169,13 @@ const Readings = ({ onViewAssociateDetails }) => {
             batch.set(newReadingRef, readingData);
             savedReadingId = newReadingRef.id;
         }
-        
         await createOrUpdateInvoice(batch, { ...readingData, id: savedReadingId });
         await batch.commit();
-        
-        setEditableReadings(prev => ({...prev, [associateId]: undefined}));
-        setSuccessMessage(`Leitura de ${associates.find(a=>a.id === associateId)?.name} salva!`);
+        setEditableReadings(prev => ({ ...prev, [associateId]: undefined }));
+        setSuccessMessage(`Leitura de ${associates.find(a => a.id === associateId)?.name} salva!`);
         setTimeout(() => setSuccessMessage(''), 2500);
     };
-    
+
     const handleToggleSelect = (associateId) => {
         setSelectedAssociates(prev => {
             const newSet = new Set(prev);
@@ -230,52 +196,24 @@ const Readings = ({ onViewAssociateDetails }) => {
     const handleBulkResetBaseline = () => {
         const selectedCount = selectedAssociates.size;
         if (selectedCount === 0) return;
-
         setModalContent({
             title: 'Confirmar Reinício de Contagem',
-            message: `Você confirma que deseja reiniciar a contagem para os ${selectedCount} associados selecionados? A leitura anterior para o período atual será definida como 0. O histórico de consumo e faturas não será alterado.`,
-            type: 'confirm',
+            message: `Você confirma que deseja reiniciar a contagem para os ${selectedCount} associados selecionados?`, type: 'confirm',
             onConfirm: async () => {
                 setShowModal(false);
                 const batch = writeBatch(db);
-                let successCount = 0;
-
                 for (const assocId of selectedAssociates) {
                     const { currentReadingDoc, currentReading } = getReadingsForAssociate(assocId, selectedPeriodId);
                     const readingValue = editableReadings[assocId] !== undefined ? parseFloat(editableReadings[assocId]) : currentReading || 0;
-                    
-                    const resetLog = {
-                        resetDate: new Date().toISOString(),
-                        user: currentUser?.uid || 'unknown'
-                    };
-
-                    const readingData = {
-                        associateId: assocId,
-                        periodId: selectedPeriodId,
-                        date: new Date().toISOString().split('T')[0],
-                        currentReading: readingValue,
-                        previousReading: 0,
-                        consumption: readingValue,
-                        isReset: true,
-                        resetLog: resetLog
-                    };
-                    
+                    const readingData = { associateId: assocId, periodId: selectedPeriodId, date: new Date().toISOString().split('T')[0], currentReading: readingValue, previousReading: 0, consumption: readingValue, isReset: true, resetLog: { resetDate: new Date().toISOString(), user: currentUser?.uid || 'unknown' } };
                     if (currentReadingDoc) {
-                        const readingRef = doc(db, getCollectionPath('readings', userId), currentReadingDoc.id);
-                        batch.update(readingRef, readingData);
+                        batch.update(doc(db, getCollectionPath('readings', userId), currentReadingDoc.id), readingData);
                     } else {
-                        const newReadingRef = doc(collection(db, getCollectionPath('readings', userId)));
-                        batch.set(newReadingRef, readingData);
+                        batch.set(doc(collection(db, getCollectionPath('readings', userId))), readingData);
                     }
-
-                    const logRef = doc(collection(db, getCollectionPath('baselineResetLogs', userId)));
-                    batch.set(logRef, { associateId: assocId, periodId: selectedPeriodId, ...resetLog });
-                    
-                    successCount++;
                 }
-
                 await batch.commit();
-                setSuccessMessage(`${successCount} contagens foram reiniciadas com sucesso!`);
+                setSuccessMessage(`${selectedCount} contagens reiniciadas!`);
                 setSelectedAssociates(new Set());
                 setTimeout(() => setSuccessMessage(''), 3000);
             },
@@ -308,11 +246,6 @@ const Readings = ({ onViewAssociateDetails }) => {
                     <Button onClick={handleBulkResetBaseline} variant="primary" disabled={selectedAssociates.size === 0}>
                         Ações para {selectedAssociates.size} selecionados
                     </Button>
-                    {selectedAssociates.size > 0 && (
-                        <div className="absolute bottom-full mb-2 w-64 bg-gray-800 text-white text-xs rounded py-1 px-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                            Reiniciar Contagem (Troca de Hidrômetro)
-                        </div>
-                    )}
                 </div>
             </div>
             <div className="overflow-x-auto rounded-xl shadow-md">
@@ -337,7 +270,7 @@ const Readings = ({ onViewAssociateDetails }) => {
                                 <tr key={assoc.id} className={`border-b transition-colors ${selectedAssociates.has(assoc.id) ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
                                     <td className="py-3 px-4"><input type="checkbox" checked={selectedAssociates.has(assoc.id)} onChange={() => handleToggleSelect(assoc.id)} /></td>
                                     <td className="py-3 px-4">{assoc.sequentialId}</td>
-                                    <td className="py-3 px-4 font-semibold hover:underline cursor-pointer" onClick={() => onViewAssociateDetails(assoc)}>{assoc.name}</td>
+                                    <td className="py-3 px-4 font-semibold hover:underline cursor-pointer" onClick={() => navigate(`/associados/detalhes/${assoc.id}`)}>{assoc.name}</td>
                                     <td className="py-3 px-4 text-sm text-gray-600">{assoc.generalHydrometerId}</td>
                                     <td className="py-3 px-4">{previousReading.toFixed(2)} m³ {currentReadingDoc?.isReset && <span className="text-blue-500 text-xs" title={`Contagem reiniciada em ${formatDate(currentReadingDoc?.resetLog?.resetDate)}`}>🔄</span>}</td>
                                     <td className="py-3 px-4">
@@ -351,14 +284,7 @@ const Readings = ({ onViewAssociateDetails }) => {
                     </tbody>
                 </table>
             </div>
-            {isFilterModalOpen && (
-                <ReadingsFilterModal
-                    filter={filter}
-                    onFilterChange={setFilter}
-                    onClose={() => setFilterModalOpen(false)}
-                    options={filterOptions}
-                />
-            )}
+            {isFilterModalOpen && <ReadingsFilterModal filter={filter} onFilterChange={setFilter} onClose={() => setFilterModalOpen(false)} options={filterOptions} />}
             <Modal {...modalContent} show={showModal} onConfirm={modalContent.onConfirm || (() => setShowModal(false))} onCancel={modalContent.onCancel} />
         </div>
     );
