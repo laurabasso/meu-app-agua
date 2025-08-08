@@ -44,6 +44,9 @@ const Associates = () => {
                     regions: settings.regions || [],
                     generalHydrometers: settings.generalHydrometers || [],
                 });
+            } else {
+                // Se não houver configurações, define como vazio para evitar erros
+                setFilterOptions({ regions: [], generalHydrometers: [] });
             }
         });
 
@@ -55,8 +58,7 @@ const Associates = () => {
 
     const sortedAndFilteredAssociates = useMemo(() => {
         if (isLoading) return [];
-        let filtered = [...associates];
-        filtered = filtered.filter(assoc => {
+        return associates.filter(assoc => {
             const name = assoc.name || '';
             const seqId = assoc.sequentialId || '';
             const matchesSearch = name.toLowerCase().includes(searchTerm.toLowerCase()) || String(seqId).includes(searchTerm);
@@ -65,17 +67,14 @@ const Associates = () => {
             const matchesHydrometer = filter.generalHydrometerId === 'all' || assoc.generalHydrometerId === filter.generalHydrometerId;
             const matchesType = filter.type === 'all' || assoc.type === filter.type;
             return matchesSearch && matchesStatus && matchesRegion && matchesHydrometer && matchesType;
+        }).sort((a, b) => {
+            if (!sortConfig.key) return 0;
+            const valA = a[sortConfig.key];
+            const valB = b[sortConfig.key];
+            if (valA < valB) return sortConfig.direction === 'ascending' ? -1 : 1;
+            if (valA > valB) return sortConfig.direction === 'ascending' ? 1 : -1;
+            return 0;
         });
-        if (sortConfig.key) {
-            filtered.sort((a, b) => {
-                const valA = a[sortConfig.key];
-                const valB = b[sortConfig.key];
-                if (valA < valB) return sortConfig.direction === 'ascending' ? -1 : 1;
-                if (valA > valB) return sortConfig.direction === 'ascending' ? 1 : -1;
-                return 0;
-            });
-        }
-        return filtered;
     }, [associates, searchTerm, filter, sortConfig, isLoading]);
     
     if (!context || !context.userId) {
