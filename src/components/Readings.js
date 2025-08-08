@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, doc, updateDoc, addDoc, query, where, getDocs, setDoc, writeBatch } from 'firebase/firestore';
-import { useNavigate } from 'react-router-dom'; // Importar o hook de navegação
+import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../AppContext';
 import Modal from './Modal';
 import LabeledInput from './LabeledInput';
@@ -12,14 +12,23 @@ const SortIcon = ({ direction }) => {
     return direction === 'ascending' ? ' ▲' : ' ▼';
 };
 
-// Remover a prop de navegação
 const Readings = () => {
-    const navigate = useNavigate(); // Inicializar o hook
+    const navigate = useNavigate();
     const context = useAppContext();
     const [readings, setReadings] = useState([]);
     const [associates, setAssociates] = useState([]);
     const [periods, setPeriods] = useState([]);
     const [settings, setSettings] = useState(null);
+    
+    // Sistema de loading robusto
+    const [loadingStatus, setLoadingStatus] = useState({
+        associates: true,
+        periods: true,
+        readings: true,
+        settings: true,
+    });
+    const isLoading = useMemo(() => Object.values(loadingStatus).some(status => status), [loadingStatus]);
+
     const [selectedPeriodId, setSelectedPeriodId] = useState('');
     const [editableReadings, setEditableReadings] = useState({});
     const [searchTerm, setSearchTerm] = useState('');
@@ -34,27 +43,39 @@ const Readings = () => {
 
     useEffect(() => {
         if (!context || !context.userId) return;
+
         const { db, getCollectionPath, userId } = context;
+
         const unsubscribes = [
-            onSnapshot(collection(db, getCollectionPath('associates', userId)), s => setAssociates(s.docs.map(d => ({ id: d.id, ...d.data() })))),
+            onSnapshot(collection(db, getCollectionPath('associates', userId)), s => {
+                setAssociates(s.docs.map(d => ({ id: d.id, ...d.data() })));
+                setLoadingStatus(prev => ({ ...prev, associates: false }));
+            }),
             onSnapshot(collection(db, getCollectionPath('periods', userId)), s => {
                 const data = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => new Date(b.readingDate) - new Date(a.readingDate));
                 setPeriods(data);
                 if (data.length > 0 && !selectedPeriodId) setSelectedPeriodId(data[0].id);
+                setLoadingStatus(prev => ({ ...prev, periods: false }));
             }),
-            onSnapshot(collection(db, getCollectionPath('readings', userId)), s => setReadings(s.docs.map(d => ({ id: d.id, ...d.data() })))),
+            onSnapshot(collection(db, getCollectionPath('readings', userId)), s => {
+                setReadings(s.docs.map(d => ({ id: d.id, ...d.data() })));
+                setLoadingStatus(prev => ({ ...prev, readings: false }));
+            }),
             onSnapshot(doc(db, getCollectionPath('settings', userId), 'config'), s => {
                 if (s.exists()) {
                     const data = s.data();
                     setFilterOptions({ regions: data.regions || [], generalHydrometers: data.generalHydrometers || [] });
                     setSettings(data);
                 }
+                setLoadingStatus(prev => ({ ...prev, settings: false }));
             })
         ];
+
         return () => unsubscribes.forEach(unsub => unsub());
-    }, [context, selectedPeriodId]);
+    }, [context]);
 
     const sortedAndFilteredAssociates = useMemo(() => {
+        if (isLoading) return []; // Não processar nada até que tudo esteja carregado
         let filtered = [...associates];
         filtered = filtered.filter(a => {
             const name = a.name || '';
@@ -76,13 +97,15 @@ const Readings = () => {
             });
         }
         return filtered;
-    }, [associates, searchTerm, filter, sortConfig]);
+    }, [associates, searchTerm, filter, sortConfig, isLoading]);
 
     if (!context || !context.userId) {
-        return <div className="text-center p-10 font-semibold">Carregando...</div>;
+        return <div className="text-center p-10 font-semibold">Aguardando contexto do utilizador...</div>;
     }
     const { db, getCollectionPath, userId, currentUser, formatDate } = context;
 
+    // O resto do seu código permanece igual (handleSaveReading, etc.)
+    // ...
     const requestSort = (key) => {
         let direction = 'ascending';
         if (sortConfig.key === key && sortConfig.direction === 'ascending') {
@@ -92,7 +115,7 @@ const Readings = () => {
     };
 
     const calculateAmountDue = (consumption, associate) => {
-        if (!settings || !settings.tariffs || !associate) return 0;
+        if (isLoading || !settings || !settings.tariffs || !associate) return 0;
         const tariff = settings.tariffs[associate.type] || settings.tariffs['Associado'];
         if (!tariff) return 0;
         const { standardMeters = 0, fixedFee = 0, excessTariff = 0 } = tariff;
@@ -106,7 +129,7 @@ const Readings = () => {
     };
 
     const getReadingsForAssociate = (associateId, periodId) => {
-        if (!periodId) return { currentReading: null, previousReading: 0, consumption: 0, currentReadingDoc: null };
+        if (isLoading || !periodId) return { currentReading: null, previousReading: 0, consumption: 0, currentReadingDoc: null };
         const periodIndex = periods.findIndex(p => p.id === periodId);
         const previousPeriod = periodIndex > -1 && periods[periodIndex + 1] ? periods[periodIndex + 1] : null;
         const prevReadingDoc = previousPeriod ? readings.find(r => r.associateId === associateId && r.periodId === previousPeriod.id) : null;
@@ -197,8 +220,7 @@ const Readings = () => {
         const selectedCount = selectedAssociates.size;
         if (selectedCount === 0) return;
         setModalContent({
-            title: 'Confirmar Reinício de Contagem',
-            message: `Você confirma que deseja reiniciar a contagem para os ${selectedCount} associados selecionados?`, type: 'confirm',
+            title: 'Confirmar Reinício de Contagem', message: `Você confirma que deseja reiniciar a contagem para os ${selectedCount} associados selecionados?`, type: 'confirm',
             onConfirm: async () => {
                 setShowModal(false);
                 const batch = writeBatch(db);
@@ -232,58 +254,64 @@ const Readings = () => {
     return (
         <div className="p-4 md:p-8 bg-white rounded-xl shadow-lg max-w-7xl mx-auto my-8 font-inter">
             <h2 className="text-3xl font-bold text-gray-800 mb-6">Lançar Leituras</h2>
-            {successMessage && <div className="bg-green-100 text-green-800 p-3 mb-4 rounded-lg text-center">{successMessage}</div>}
-            <div className="flex flex-col md:flex-row gap-4 mb-4">
-                <input type="text" placeholder="Buscar associado..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full p-3 border rounded-lg" />
-                <select value={selectedPeriodId} onChange={e => setSelectedPeriodId(e.target.value)} className="w-full md:w-1/3 p-3 border rounded-lg">
-                    <option value="">Selecione um Período</option>
-                    {periods.map(p => <option key={p.id} value={p.id}>{p.billingPeriodName}</option>)}
-                </select>
-                <Button onClick={() => setFilterModalOpen(true)} variant="secondary">Filtros Avançados</Button>
-            </div>
-            <div className="flex items-center gap-4 mb-4 p-2 bg-gray-50 rounded-lg">
-                <div className="relative group">
-                    <Button onClick={handleBulkResetBaseline} variant="primary" disabled={selectedAssociates.size === 0}>
-                        Ações para {selectedAssociates.size} selecionados
-                    </Button>
-                </div>
-            </div>
-            <div className="overflow-x-auto rounded-xl shadow-md">
-                <table className="min-w-full bg-white">
-                    <thead className="bg-gray-100">
-                        <tr>
-                            <th className="py-3 px-4"><input type="checkbox" onChange={handleToggleSelectAll} checked={selectedAssociates.size === sortedAndFilteredAssociates.length && sortedAndFilteredAssociates.length > 0} /></th>
-                            <SortableHeader sortKey="sequentialId">ID</SortableHeader>
-                            <SortableHeader sortKey="name">Nome</SortableHeader>
-                            <SortableHeader sortKey="generalHydrometerId">Hidrômetro</SortableHeader>
-                            <th className="py-3 px-4 text-left">Leitura Anterior</th>
-                            <th className="py-3 px-4 text-left">Leitura Atual</th>
-                            <th className="py-3 px-4 text-left">Consumo</th>
-                            <th className="py-3 px-4 text-left">Valor da Fatura (R$)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {sortedAndFilteredAssociates.map(assoc => {
-                            const { currentReading, previousReading, consumption, currentReadingDoc } = getReadingsForAssociate(assoc.id, selectedPeriodId);
-                            const invoiceAmount = calculateAmountDue(consumption, assoc);
-                            return (
-                                <tr key={assoc.id} className={`border-b transition-colors ${selectedAssociates.has(assoc.id) ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
-                                    <td className="py-3 px-4"><input type="checkbox" checked={selectedAssociates.has(assoc.id)} onChange={() => handleToggleSelect(assoc.id)} /></td>
-                                    <td className="py-3 px-4">{assoc.sequentialId}</td>
-                                    <td className="py-3 px-4 font-semibold hover:underline cursor-pointer" onClick={() => navigate(`/associados/detalhes/${assoc.id}`)}>{assoc.name}</td>
-                                    <td className="py-3 px-4 text-sm text-gray-600">{assoc.generalHydrometerId}</td>
-                                    <td className="py-3 px-4">{previousReading.toFixed(2)} m³ {currentReadingDoc?.isReset && <span className="text-blue-500 text-xs" title={`Contagem reiniciada em ${formatDate(currentReadingDoc?.resetLog?.resetDate)}`}>🔄</span>}</td>
-                                    <td className="py-3 px-4">
-                                        <LabeledInput type="number" step="0.01" value={editableReadings[assoc.id] !== undefined ? editableReadings[assoc.id] : (currentReading !== null ? currentReading : '')} onChange={e => setEditableReadings(prev => ({ ...prev, [assoc.id]: e.target.value }))} onBlur={() => handleSaveReading(assoc.id)} onKeyDown={(e) => e.key === 'Enter' && handleSaveReading(assoc.id)} className="w-28" placeholder="0.00" />
-                                    </td>
-                                    <td className="py-3 px-4 font-semibold">{consumption.toFixed(2)} m³</td>
-                                    <td className="py-3 px-4 font-bold text-blue-600">{consumption >= 0 ? `R$ ${invoiceAmount.toFixed(2)}` : 'Inválido'}</td>
+            {isLoading ? (
+                <div className="text-center p-10 font-semibold">A carregar dados das leituras...</div>
+            ) : (
+                <>
+                    {successMessage && <div className="bg-green-100 text-green-800 p-3 mb-4 rounded-lg text-center">{successMessage}</div>}
+                    <div className="flex flex-col md:flex-row gap-4 mb-4">
+                        <input type="text" placeholder="Buscar associado..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full p-3 border rounded-lg" />
+                        <select value={selectedPeriodId} onChange={e => setSelectedPeriodId(e.target.value)} className="w-full md:w-1/3 p-3 border rounded-lg">
+                            <option value="">Selecione um Período</option>
+                            {periods.map(p => <option key={p.id} value={p.id}>{p.billingPeriodName}</option>)}
+                        </select>
+                        <Button onClick={() => setFilterModalOpen(true)} variant="secondary">Filtros Avançados</Button>
+                    </div>
+                    <div className="flex items-center gap-4 mb-4 p-2 bg-gray-50 rounded-lg">
+                        <div className="relative group">
+                            <Button onClick={handleBulkResetBaseline} variant="primary" disabled={selectedAssociates.size === 0}>
+                                Ações para {selectedAssociates.size} selecionados
+                            </Button>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto rounded-xl shadow-md">
+                        <table className="min-w-full bg-white">
+                           <thead className="bg-gray-100">
+                                <tr>
+                                    <th className="py-3 px-4"><input type="checkbox" onChange={handleToggleSelectAll} checked={!isLoading && selectedAssociates.size === sortedAndFilteredAssociates.length && sortedAndFilteredAssociates.length > 0} /></th>
+                                    <SortableHeader sortKey="sequentialId">ID</SortableHeader>
+                                    <SortableHeader sortKey="name">Nome</SortableHeader>
+                                    <SortableHeader sortKey="generalHydrometerId">Hidrômetro</SortableHeader>
+                                    <th className="py-3 px-4 text-left">Leitura Anterior</th>
+                                    <th className="py-3 px-4 text-left">Leitura Atual</th>
+                                    <th className="py-3 px-4 text-left">Consumo</th>
+                                    <th className="py-3 px-4 text-left">Valor da Fatura (R$)</th>
                                 </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
-            </div>
+                            </thead>
+                            <tbody>
+                                {sortedAndFilteredAssociates.map(assoc => {
+                                    const { currentReading, previousReading, consumption, currentReadingDoc } = getReadingsForAssociate(assoc.id, selectedPeriodId);
+                                    const invoiceAmount = calculateAmountDue(consumption, assoc);
+                                    return (
+                                        <tr key={assoc.id} className={`border-b transition-colors ${selectedAssociates.has(assoc.id) ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                                            <td className="py-3 px-4"><input type="checkbox" checked={selectedAssociates.has(assoc.id)} onChange={() => handleToggleSelect(assoc.id)} /></td>
+                                            <td className="py-3 px-4">{assoc.sequentialId}</td>
+                                            <td className="py-3 px-4 font-semibold hover:underline cursor-pointer" onClick={() => navigate(`/associados/detalhes/${assoc.id}`)}>{assoc.name}</td>
+                                            <td className="py-3 px-4 text-sm text-gray-600">{assoc.generalHydrometerId}</td>
+                                            <td className="py-3 px-4">{previousReading.toFixed(2)} m³ {currentReadingDoc?.isReset && <span className="text-blue-500 text-xs" title={`Contagem reiniciada em ${formatDate(currentReadingDoc?.resetLog?.resetDate)}`}>🔄</span>}</td>
+                                            <td className="py-3 px-4">
+                                                <LabeledInput type="number" step="0.01" value={editableReadings[assoc.id] !== undefined ? editableReadings[assoc.id] : (currentReading !== null ? currentReading : '')} onChange={e => setEditableReadings(prev => ({ ...prev, [assoc.id]: e.target.value }))} onBlur={() => handleSaveReading(assoc.id)} onKeyDown={(e) => e.key === 'Enter' && handleSaveReading(assoc.id)} className="w-28" placeholder="0.00" />
+                                            </td>
+                                            <td className="py-3 px-4 font-semibold">{consumption.toFixed(2)} m³</td>
+                                            <td className="py-3 px-4 font-bold text-blue-600">{consumption >= 0 ? `R$ ${invoiceAmount.toFixed(2)}` : 'Inválido'}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </>
+            )}
             {isFilterModalOpen && <ReadingsFilterModal filter={filter} onFilterChange={setFilter} onClose={() => setFilterModalOpen(false)} options={filterOptions} />}
             <Modal {...modalContent} show={showModal} onConfirm={modalContent.onConfirm || (() => setShowModal(false))} onCancel={modalContent.onCancel} />
         </div>
