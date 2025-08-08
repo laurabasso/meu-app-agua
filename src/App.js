@@ -1,6 +1,7 @@
 /* global __app_id */
 import React from 'react';
-import { Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom';
+// 1. Importar BrowserRouter e outros componentes de rotas aqui
+import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
@@ -28,31 +29,34 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
+// ... (as suas funções getCollectionPath e formatDate permanecem iguais)
 function getCollectionPath(collectionName, userId) {
-    if (!userId) {
-        console.error("UserID indisponível em getCollectionPath.");
-        return `artifacts/default-app-id/users/nouser/${collectionName}`;
-    }
+    if (!userId) { return `artifacts/default-app-id/users/nouser/${collectionName}`; }
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
     return `/artifacts/${appId}/users/${userId}/${collectionName}`;
 }
-
 function formatDate(dateStr) {
     if (!dateStr) return '';
     const d = new Date(dateStr);
     return !isNaN(d.getTime()) ? d.toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'Data inválida';
 }
 
+
+// O AppWrapper agora é o nosso ponto de entrada principal e contém o Roteador
 export default function AppWrapper() {
-    return (
-        <AuthProvider>
-            <RequireAuth>
-                <App />
-            </RequireAuth>
-        </AuthProvider>
-    );
+  return (
+    // 2. O BrowserRouter agora envolve tudo
+    <BrowserRouter>
+      <AuthProvider>
+        <RequireAuth>
+          <App />
+        </RequireAuth>
+      </AuthProvider>
+    </BrowserRouter>
+  );
 }
 
+// O componente App permanece o mesmo, focado apenas na UI
 function App() {
     const { currentUser, handleLogout } = useAuth();
 
