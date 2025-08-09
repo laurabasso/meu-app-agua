@@ -1,6 +1,5 @@
 /* global __app_id */
 import React from 'react';
-// 1. Importar BrowserRouter e outros componentes de rotas aqui
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
@@ -29,7 +28,6 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// ... (as suas funções getCollectionPath e formatDate permanecem iguais)
 function getCollectionPath(collectionName, userId) {
     if (!userId) { return `artifacts/default-app-id/users/nouser/${collectionName}`; }
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -41,11 +39,8 @@ function formatDate(dateStr) {
     return !isNaN(d.getTime()) ? d.toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'Data inválida';
 }
 
-
-// O AppWrapper agora é o nosso ponto de entrada principal e contém o Roteador
 export default function AppWrapper() {
   return (
-    // 2. O BrowserRouter agora envolve tudo
     <BrowserRouter>
       <AuthProvider>
         <RequireAuth>
@@ -56,7 +51,6 @@ export default function AppWrapper() {
   );
 }
 
-// O componente App permanece o mesmo, focado apenas na UI
 function App() {
     const { currentUser, handleLogout } = useAuth();
 
@@ -64,10 +58,18 @@ function App() {
         db, auth, userId: currentUser?.uid, currentUser, getCollectionPath, formatDate,
     };
 
+    // **A CORREÇÃO ESTÁ AQUI**
+    // As chaves do objeto (que geram o link) agora estão em português,
+    // para corresponderem exatamente aos `path` das Rotas.
     const navLinks = {
-        home: 'Início', associates: 'Associados', readings: 'Leituras',
-        hidrometros: 'Hidrômetros Gerais', faturas: 'Faturas',
-        relatorios: 'Relatórios', configuracoes: 'Configurações', perfil: 'Perfil'
+        home: 'Início',
+        associados: 'Associados', // Antes: associates
+        leituras: 'Leituras',     // Antes: readings
+        hidrometros: 'Hidrômetros Gerais',
+        faturas: 'Faturas',
+        relatorios: 'Relatórios',
+        configuracoes: 'Configurações',
+        perfil: 'Perfil'
     };
 
     return (
