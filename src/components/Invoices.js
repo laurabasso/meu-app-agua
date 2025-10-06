@@ -159,6 +159,7 @@ const Invoices = () => {
         await updateDoc(doc(db, getCollectionPath('invoices', userId), invoiceId), { status: 'Pago', paymentMethod: method, paymentDate: new Date().toISOString() });
     };
     
+    // **INÍCIO DA CORREÇÃO**
     const handleExportSummaryPdf = async () => {
         const periodId = filter.periodId === 'all' ? (periods[0]?.id || '') : filter.periodId;
         const period = periods.find(p => p.id === periodId);
@@ -173,7 +174,10 @@ const Invoices = () => {
             if (regionInvoices.length > 0) {
                 if (index > 0) docPDF.addPage();
                 docPDF.text(`Resumo de Faturas - Região: ${region}`, 14, 22);
-                docPDF.text(`Período: ${period?.consumptionPeriodName || 'N/A'}`, 14, 30);
+                docPDF.setFontSize(10);
+                docPDF.text(`Data Leitura: ${formatDate(period.readingDate)}`, 14, 30);
+                docPDF.text(`Período (Faturamento): ${(period.billingPeriodName || '').replace('Período de ', '')}`, 14, 36);
+                docPDF.text(`Período (Consumo): ${(period.consumptionPeriodName || '').replace('Leitura de ', '')}`, 14, 42);
                 
                 const tableData = regionInvoices.map(item => [
                     item.associate.sequentialId, item.associate.name,
@@ -183,9 +187,21 @@ const Invoices = () => {
                     formatCurrency(item.amountDue), '', '', ''
                 ]);
                 
+                // Soma dos totais
+                const totalConsumption = regionInvoices.reduce((sum, item) => sum + (item.consumption || 0), 0);
+                const totalAmount = regionInvoices.reduce((sum, item) => sum + (item.amountDue || 0), 0);
+                
+                // Adiciona a linha de total ao final da tabela
+                tableData.push([
+                    { content: 'TOTAIS', colSpan: 4, styles: { fontStyle: 'bold', halign: 'right' } },
+                    { content: Math.round(totalConsumption), styles: { fontStyle: 'bold' } },
+                    { content: formatCurrency(totalAmount), styles: { fontStyle: 'bold' } },
+                    '', '', ''
+                ]);
+
                 autoTable(docPDF, {
-                    startY: 35,
-                    head: [['ID', 'Nome', 'Leit. Ant.', 'Leit. Atual', 'Consumo', 'Valor', 'PIX', 'Dinheiro', 'Data Pag.']],
+                    startY: 46,
+                    head: [['ID', 'Nome', 'Leit. Ant.', 'Leit. Atual', 'Consumo (m³)', 'Valor', 'PIX', 'Dinheiro', 'Data Pag.']],
                     body: tableData,
                     styles: { fontSize: 8 }
                 });
@@ -211,8 +227,9 @@ const Invoices = () => {
         docPDF.line(15, yOffset + 28, 195, yOffset + 28);
         docPDF.setFontSize(9);
         docPDF.text(`ASSOCIADO: ${associate.name} (ID: ${associate.sequentialId})`, 15, yOffset + 34);
-        docPDF.text(`CPF/CNPJ: ${associate.documentNumber || 'N/A'}`, 15, yOffset + 38); // LINHA ADICIONADA
-        docPDF.text(`PERÍODO DE CONSUMO: ${period.consumptionPeriodName || 'N/A'}`, 195, yOffset + 34, { align: 'right' });
+        docPDF.text(`CPF/CNPJ: ${associate.documentNumber || 'N/A'}`, 15, yOffset + 38);
+        docPDF.text(`Data Leitura: ${formatDate(period.readingDate)}`, 195, yOffset + 34, { align: 'right' });
+        docPDF.text(`Período de Consumo: ${(period.consumptionPeriodName || '').replace('Leitura de ', '')}`, 195, yOffset + 38, { align: 'right' });
 
         autoTable(docPDF, {
             startY: yOffset + 42,
@@ -235,15 +252,16 @@ const Invoices = () => {
         const finalY2 = (docPDF).lastAutoTable.finalY;
         docPDF.setFontSize(10);
         docPDF.setFont('helvetica', 'normal');
-        docPDF.text('TOTAL A PAGAR', 155, finalY2 + 5, { align: 'right' }); // LAYOUT CORRIGIDO
+        docPDF.text('TOTAL A PAGAR', 155, finalY2 + 5, { align: 'right' });
         docPDF.setFontSize(16); docPDF.setFont('helvetica', 'bold');
-        docPDF.text(formatCurrency(invoice.amountDue), 195, finalY2 + 5, { align: 'right' }); // LAYOUT CORRIGIDO
+        docPDF.text(formatCurrency(invoice.amountDue), 195, finalY2 + 5, { align: 'right' });
         
         docPDF.setFont('helvetica', 'normal'); docPDF.setFontSize(9);
         docPDF.text(`PIX: ${acajuviInfo.pixKey || 'N/A'}`, 105, yOffset + 88, { align: 'center' });
         if (reading?.isReset) { docPDF.setFontSize(8); docPDF.text('🔄 Contagem reiniciada neste período.', 15, yOffset + 92); }
         docPDF.line(10, yOffset + 99, 200, yOffset + 99, 'D');
     };
+    // **FIM DA CORREÇÃO**
 
     const handleGenerateZip = async () => {
         const periodId = filter.periodId;

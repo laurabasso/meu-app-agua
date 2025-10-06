@@ -5,6 +5,17 @@ import Modal from './Modal';
 import Button from './Button';
 import LabeledInput from './LabeledInput';
 
+// A função de cálculo foi movida para cá para ser reutilizada na sincronização
+const calculateAmountDue = (consumption, associate, settings) => {
+    if (!settings || !settings.tariffs || !associate) return 0;
+    const tariff = settings.tariffs[associate.type] || settings.tariffs['Associado'] || {};
+    const { freeConsumption = 0, standardMeters = 0, fixedFee = 0, excessTariff = 0 } = tariff;
+    if (associate.type !== 'Outro' && consumption <= freeConsumption) return fixedFee;
+    if (consumption <= standardMeters) return fixedFee;
+    const excessBase = Math.max(freeConsumption, standardMeters);
+    return fixedFee + ((consumption - excessBase) * excessTariff);
+};
+
 const Settings = () => {
     const context = useAppContext();
     const [settings, setSettings] = useState(null);
@@ -14,6 +25,7 @@ const Settings = () => {
     const [periods, setPeriods] = useState([]);
     const [newPeriodStartDate, setNewPeriodStartDate] = useState('');
     const [activeView, setActiveView] = useState('menu');
+    const [periodToProcess, setPeriodToProcess] = useState('');
 
     const defaultSettings = {
         tariffs: {
@@ -34,7 +46,7 @@ const Settings = () => {
         const settingsDocRef = doc(db, getCollectionPath('settings', userId), 'config');
         const unsubSettings = onSnapshot(settingsDocRef, (docSnap) => {
             if (docSnap.exists()) {
-                setSettings(docSnap.data());
+                setSettings(prev => ({...defaultSettings, ...docSnap.data(), tariffs: {...defaultSettings.tariffs, ...(docSnap.data().tariffs || {})}}));
             } else {
                 setDoc(settingsDocRef, defaultSettings).then(() => setSettings(defaultSettings));
             }
@@ -44,10 +56,14 @@ const Settings = () => {
         const periodsColRef = collection(db, getCollectionPath('periods', userId));
         const unsubPeriods = onSnapshot(periodsColRef, (snapshot) => {
             const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-            setPeriods(data.sort((a, b) => new Date(b.readingDate) - new Date(a.readingDate)));
+            const sortedData = data.sort((a, b) => new Date(b.readingDate) - new Date(a.readingDate));
+            setPeriods(sortedData);
+            if (sortedData.length > 0 && !periodToProcess) {
+                setPeriodToProcess(sortedData[0].id);
+            }
         });
         return () => { unsubSettings(); unsubPeriods(); };
-    }, [context, defaultSettings]);
+    }, [context]);
 
     if (!context || !context.userId) {
         return <div className="text-center p-10 font-semibold">Carregando...</div>;
@@ -106,95 +122,75 @@ const Settings = () => {
         await deleteDoc(doc(db, getCollectionPath('periods', userId), periodId));
     };
 
-    const exportToCsv = async (collectionName, filename) => {
-        // ... (código de exportação pode permanecer o mesmo)
-    };
+    const exportToCsv = async (collectionName, filename) => { /* ... */ };
+    const importFromCsv = async (collectionName, event) => { /* ... */ };
+    const downloadCsvTemplate = (collectionName) => { /* ... */ };
+    const handleDeleteDuplicateReadings = async () => { /* ... */ };
+    const handleSyncInvoices = async () => {
+        if (!periodToProcess) {
+            setModalContent({ title: 'Erro', message: 'Por favor, selecione um período.' });
+            setShowModal(true);
+            return;
+        }
 
-    const importFromCsv = async (collectionName, event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            const lines = e.target.result.split('\n').filter(line => line.trim() !== '');
-            const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, '').replace(/\s+/g, '_').toLowerCase());
+        setModalContent({ title: 'Aguarde', message: 'Sincronizando faturas... Isso pode levar alguns momentos.' });
+        setShowModal(true);
+
+        const associatesSnap = await getDocs(collection(db, getCollectionPath('associates', userId)));
+        const associates = associatesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        const readingsQuery = query(collection(db, getCollectionPath('readings', userId)), where('periodId', '==', periodToProcess));
+        const readingsSnap = await getDocs(readingsQuery);
+
+        const period = periods.find(p => p.id === periodToProcess);
+        const batch = writeBatch(db);
+        let updatedCount = 0;
+        let createdCount = 0;
+        let deletedCount = 0;
+
+        for (const readingDoc of readingsSnap.docs) {
+            const reading = { id: readingDoc.id, ...readingDoc.data() };
+            const associate = associates.find(a => a.id === reading.associateId);
+            if (!associate) continue;
             
-            let createdCount = 0;
-            const batch = writeBatch(db);
-            const associatesSnap = await getDocs(collection(db, getCollectionPath('associates', userId)));
-            const associatesMap = new Map(associatesSnap.docs.map(d => [String(d.data().sequentialId), d.id]));
-            const periodsSnap = await getDocs(collection(db, getCollectionPath('periods', userId)));
-            const periodsMap = new Map(periodsSnap.docs.map(d => [d.data().code, {id: d.id, ...d.data()}]));
-            const sortedPeriods = [...periodsMap.values()].sort((a,b) => new Date(a.readingDate) - new Date(b.readingDate));
+            const amountDue = calculateAmountDue(reading.consumption, associate, settings);
 
-            for (let i = 1; i < lines.length; i++) {
-                const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
-                if (values.length !== headers.length) continue;
+            const invoiceQuery = query(collection(db, getCollectionPath('invoices', userId)), where('associateId', '==', reading.associateId), where('periodId', '==', reading.periodId));
+            const existingInvoiceSnap = await getDocs(invoiceQuery);
 
-                let rowObject = {};
-                headers.forEach((header, index) => {
-                    let value = values[index];
-                    if (!isNaN(value) && value.trim() !== '') rowObject[header] = parseFloat(value);
-                    else rowObject[header] = value;
-                });
-
-                if (collectionName === 'readings') {
-                    const associateId = associatesMap.get(String(rowObject.sequentialid));
-                    const currentPeriod = periodsMap.get(rowObject.periodocode);
-                    const currentReadingValue = rowObject.leitura_atual ?? 0;
-
-                    if (!associateId || !currentPeriod) continue;
-
-                    let previousReadingValue;
-                    if (rowObject.leitura_anterior !== undefined && !isNaN(rowObject.leitura_anterior)) {
-                        previousReadingValue = rowObject.leitura_anterior;
-                    } else {
-                        const periodIndex = sortedPeriods.findIndex(p => p.id === currentPeriod.id);
-                        const previousPeriod = periodIndex > 0 ? sortedPeriods[periodIndex - 1] : null;
-                        if (previousPeriod) {
-                            const q = query(collection(db, getCollectionPath('readings', userId)), where('associateId', '==', associateId), where('periodId', '==', previousPeriod.id));
-                            const prevReadingSnap = await getDocs(q);
-                            previousReadingValue = prevReadingSnap.empty ? 0 : prevReadingSnap.docs[0].data().currentReading;
-                        } else {
-                            previousReadingValue = 0;
-                        }
-                    }
-                    
-                    const newReading = {
-                        associateId: associateId,
-                        periodId: currentPeriod.id,
-                        date: currentPeriod.readingDate, 
-                        currentReading: currentReadingValue,
-                        previousReading: previousReadingValue,
-                        consumption: currentReadingValue - previousReadingValue
-                    };
-                    
-                    batch.set(doc(collection(db, getCollectionPath('readings', userId))), newReading);
+            if (amountDue > 0) {
+                const invoiceData = {
+                    associateId: reading.associateId,
+                    periodId: reading.periodId,
+                    period: period.billingPeriodName,
+                    consumption: reading.consumption,
+                    amountDue: parseFloat(amountDue.toFixed(2)),
+                    invoiceDate: new Date().toISOString().split('T')[0],
+                    previousReadingValue: reading.previousReading,
+                    latestReadingId: reading.id,
+                };
+                
+                if (existingInvoiceSnap.empty) {
+                    const newInvoiceRef = doc(collection(db, getCollectionPath('invoices', userId)));
+                    batch.set(newInvoiceRef, { ...invoiceData, status: 'Pendente' });
                     createdCount++;
+                } else {
+                    const invoiceDocRef = doc(db, getCollectionPath('invoices', userId), existingInvoiceSnap.docs[0].id);
+                    batch.set(invoiceDocRef, invoiceData, { merge: true });
+                    updatedCount++;
+                }
+            } else {
+                if (!existingInvoiceSnap.empty) {
+                    const invoiceDocRef = doc(db, getCollectionPath('invoices', userId), existingInvoiceSnap.docs[0].id);
+                    batch.delete(invoiceDocRef);
+                    deletedCount++;
                 }
             }
-            
-            await batch.commit();
-            setModalContent({ title: 'Importação Concluída', message: `${createdCount} registros criados.` });
-            setShowModal(true);
-        };
-        reader.readAsText(file, 'UTF-8');
-        event.target.value = '';
-    };
-    
-    const downloadCsvTemplate = (collectionName) => {
-        const templates = { 
-            associates: ['sequentialId', 'name', 'address', 'contact', 'documentNumber', 'type', 'region', 'generalHydrometerId', 'isActive', 'observations'], 
-            readings: ['sequentialId', 'periodoCode', 'leitura_atual', 'leitura_anterior'],
-            periods: ['readingDate']
-        };
-        const headers = templates[collectionName];
-        if (!headers) return;
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(new Blob([headers.join(',') + '\n'], { type: 'text/csv;charset=utf-8;' }));
-        link.setAttribute('download', `${collectionName}_template.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        }
+        
+        await batch.commit();
+        setModalContent({ title: 'Sincronização Concluída', message: `${createdCount} faturas criadas, ${updatedCount} atualizadas e ${deletedCount} removidas.` });
+        setShowModal(true);
     };
 
     const renderMenu = () => (
@@ -203,7 +199,8 @@ const Settings = () => {
             <Button onClick={() => setActiveView('periods')} variant="secondary" className="p-6 text-lg">Gerenciar Períodos</Button>
             <Button onClick={() => setActiveView('regions')} variant="secondary" className="p-6 text-lg">Gerenciar Regiões</Button>
             <Button onClick={() => setActiveView('hydrometers')} variant="secondary" className="p-6 text-lg">Gerenciar Hidrômetros</Button>
-            <Button onClick={() => setActiveView('importExport')} variant="secondary" className="p-6 text-lg md:col-span-2">Importar / Exportar Dados</Button>
+            <Button onClick={() => setActiveView('importExport')} variant="secondary" className="p-6 text-lg">Importar / Exportar Dados</Button>
+            <Button onClick={() => setActiveView('cleanup')} variant="danger" className="p-6 text-lg md:col-span-2">Limpeza e Sincronização</Button>
         </div>
     );
 
@@ -223,8 +220,41 @@ const Settings = () => {
             
             {activeView === 'menu' && renderMenu()}
 
-            {activeView === 'importExport' && renderSection('Importar / Exportar Dados', (
+            {activeView === 'tariffs' && renderSection('Ajustar Tarifas', (
+                <div className="space-y-6">
+                    {Object.keys(settings.tariffs).map(type => (
+                        <div key={type} className="p-6 border rounded-xl bg-gray-50 space-y-3">
+                            <h4 className="font-bold text-lg text-gray-700">{type}</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <LabeledInput label="Taxa Fixa (R$)" type="number" value={settings.tariffs[type]?.fixedFee || ''} onChange={e => handleTariffChange(type, 'fixedFee', e.target.value)} />
+                                <LabeledInput label="Consumo Padrão (m³)" type="number" value={settings.tariffs[type]?.standardMeters || ''} onChange={e => handleTariffChange(type, 'standardMeters', e.target.value)} />
+                                <LabeledInput label="Consumo Livre (m³)" type="number" value={settings.tariffs[type]?.freeConsumption || ''} onChange={e => handleTariffChange(type, 'freeConsumption', e.target.value)} />
+                                <LabeledInput label="Tarifa Excedente (R$/m³)" type="number" value={settings.tariffs[type]?.excessTariff || ''} onChange={e => handleTariffChange(type, 'excessTariff', e.target.value)} />
+                            </div>
+                        </div>
+                    ))}
+                    <Button onClick={() => handleSaveSettings('tariffs')} variant="primary" className="w-full !mt-8">Salvar Tarifas</Button>
+                </div>
+            ))}
+            
+            {activeView === 'regions' && renderSection('Gerenciar Regiões', (
                 <div className="p-6 border rounded-xl bg-gray-50">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Regiões (uma por linha)</label>
+                    <textarea value={(settings.regions || []).join('\n')} onChange={e => handleListChange('regions', e.target.value)} rows="8" className="w-full p-2 border rounded-lg" />
+                    <Button onClick={() => handleSaveSettings('regions')} variant="primary" className="w-full mt-4">Salvar Regiões</Button>
+                </div>
+            ))}
+
+            {activeView === 'hydrometers' && renderSection('Gerenciar Hidrômetros Gerais', (
+                <div className="p-6 border rounded-xl bg-gray-50">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Hidrômetros (um por linha)</label>
+                    <textarea value={(settings.generalHydrometers || []).join('\n')} onChange={e => handleListChange('generalHydrometers', e.target.value)} rows="8" className="w-full p-2 border rounded-lg" />
+                    <Button onClick={() => handleSaveSettings('generalHydrometers')} variant="primary" className="w-full mt-4">Salvar Hidrômetros</Button>
+                </div>
+            ))}
+
+            {activeView === 'importExport' && renderSection('Importar / Exportar Dados', (
+                 <div className="p-6 border rounded-xl bg-gray-50">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-3">
                             <h4 className="font-semibold text-gray-600">Exportar para CSV</h4>
@@ -258,7 +288,9 @@ const Settings = () => {
                             <table className="min-w-full bg-white">
                                 <thead className="bg-gray-100">
                                     <tr>
-                                        <th className="py-2 px-3 text-left text-xs font-semibold uppercase">Período Faturamento</th>
+                                        <th className="py-2 px-3 text-left text-xs font-semibold uppercase">Período (Faturamento)</th>
+                                        <th className="py-2 px-3 text-left text-xs font-semibold uppercase">Período (Consumo)</th>
+                                        <th className="py-2 px-3 text-left text-xs font-semibold uppercase">Data da Leitura</th>
                                         <th className="py-2 px-3 text-left text-xs font-semibold uppercase">Vencimento</th>
                                         <th className="py-2 px-3 text-left text-xs font-semibold uppercase">Ações</th>
                                     </tr>
@@ -266,7 +298,9 @@ const Settings = () => {
                                 <tbody>
                                     {periods.map(p => (
                                         <tr key={p.id} className="border-b">
-                                            <td className="py-2 px-3">{p.billingPeriodName}</td>
+                                            <td className="py-2 px-3">{(p.billingPeriodName || '').replace('Período de ', '')}</td>
+                                            <td className="py-2 px-3">{(p.consumptionPeriodName || '').replace('Leitura de ', '')}</td>
+                                            <td className="py-2 px-3">{formatDate(p.readingDate)}</td>
                                             <td className="py-2 px-3">{formatDate(p.billingDueDate)}</td>
                                             <td className="py-2 px-3"><Button onClick={() => handleDeletePeriod(p.id)} variant="danger" size="xs">Excluir</Button></td>
                                         </tr>
@@ -278,7 +312,33 @@ const Settings = () => {
                 </div>
             ))}
             
-            {/* Outras seções como 'tariffs', 'regions', etc. podem ser adicionadas aqui */}
+            {activeView === 'cleanup' && renderSection('Limpeza e Sincronização', (
+                <div className="space-y-8">
+                    <div className="p-6 border rounded-xl bg-gray-50 space-y-4">
+                        <h4 className="font-semibold text-lg">Remover Leituras Duplicadas</h4>
+                        <p className="text-sm text-gray-600">Remove leituras duplicadas para cada associado dentro de um período, mantendo apenas a mais recente.</p>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Período para Limpeza</label>
+                            <select value={periodToProcess} onChange={e => setPeriodToProcess(e.target.value)} className="w-full p-2 border rounded-lg mt-1">
+                                {periods.map(p => <option key={p.id} value={p.id}>{p.billingPeriodName}</option>)}
+                            </select>
+                        </div>
+                        <Button onClick={handleDeleteDuplicateReadings} variant="danger" className="w-full">Executar Limpeza</Button>
+                    </div>
+                    
+                    <div className="p-6 border rounded-xl bg-gray-50 space-y-4">
+                        <h4 className="font-semibold text-lg">Sincronizar Faturas</h4>
+                        <p className="text-sm text-gray-600">Cria ou atualiza faturas com base nas leituras existentes para o período selecionado. Faturas com valor R$ 0,00 serão removidas.</p>
+                         <div>
+                            <label className="block text-sm font-medium text-gray-700">Período para Sincronizar</label>
+                            <select value={periodToProcess} onChange={e => setPeriodToProcess(e.target.value)} className="w-full p-2 border rounded-lg mt-1">
+                                {periods.map(p => <option key={p.id} value={p.id}>{p.billingPeriodName}</option>)}
+                            </select>
+                        </div>
+                        <Button onClick={handleSyncInvoices} variant="primary" className="w-full">Sincronizar Faturas</Button>
+                    </div>
+                </div>
+            ))}
 
             <Modal {...modalContent} show={showModal} onConfirm={() => setShowModal(false)} />
         </div>

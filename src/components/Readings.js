@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, doc, updateDoc, addDoc, query, where, getDocs, setDoc, writeBatch } from 'firebase/firestore';
-import { useNavigate } from 'react-router-dom'; // 1. IMPORTADO
+import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../AppContext';
 import Modal from './Modal';
 import LabeledInput from './LabeledInput';
@@ -13,9 +13,8 @@ const SortIcon = ({ direction }) => {
     return direction === 'ascending' ? ' ▲' : ' ▼';
 };
 
-// 2. PROP REMOVIDA
 const Readings = () => {
-    const navigate = useNavigate(); // 3. INICIALIZADO
+    const navigate = useNavigate();
     const context = useAppContext();
 
     const [readings, setReadings] = useState([]);
@@ -152,6 +151,7 @@ const Readings = () => {
         return amount;
     };
 
+    // **INÍCIO DA CORREÇÃO**
     const getReadingsForAssociate = (associateId, periodId) => {
         if (!periodId) {
             return {
@@ -169,27 +169,30 @@ const Readings = () => {
             ? readings.find(r => r.associateId === associateId && r.periodId === previousPeriod.id)
             : null;
         
-        const prevReadingValue = prevReadingDoc ? prevReadingDoc.currentReading : 0;
+        // Garante que o valor seja sempre um número, tratando casos de null ou undefined.
+        const prevReadingValue = Number(prevReadingDoc?.currentReading) || 0;
         
         const currentReadingDoc = readings.find(r => r.associateId === associateId && r.periodId === periodId);
-        const currReadingValue = currentReadingDoc ? currentReadingDoc.currentReading : 0;
+        // Garante que o valor seja sempre um número.
+        const currReadingValue = Number(currentReadingDoc?.currentReading) || 0;
         
         let consumption = 0;
         if (currentReadingDoc) {
             if (currentReadingDoc.isReset) {
-                consumption = currentReadingDoc.currentReading;
+                consumption = currReadingValue;
             } else {
                 consumption = currReadingValue - prevReadingValue;
             }
         }
 
         return {
-            currentReading: currReadingValue,
+            currentReading: currentReadingDoc ? currentReadingDoc.currentReading : null,
             previousReading: prevReadingValue,
             currentReadingDoc,
             consumption
         };
     };
+    // **FIM DA CORREÇÃO**
 
     const createOrUpdateInvoice = async (batch, readingData) => {
         const associate = associates.find(a => a.id === readingData.associateId);
@@ -452,7 +455,6 @@ const Readings = () => {
                                     </td>
                                     <td className="py-3 px-4">{assoc.sequentialId}</td>
                                     
-                                    {/* 4. ALTERAÇÃO FINAL AQUI */}
                                     <td className="py-3 px-4 font-semibold hover:underline cursor-pointer" onClick={() => navigate(`/associados/detalhes/${assoc.id}`)}>{assoc.name}</td>
                                     
                                     <td className="py-3 px-4 text-sm text-gray-600">{assoc.generalHydrometerId}</td>
